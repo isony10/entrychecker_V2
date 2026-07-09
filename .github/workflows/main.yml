@@ -1,0 +1,11 @@
+name: Keep Render App Awake
+on:
+  schedule:
+    - cron: '*/20 * * * *'  # 20분마다 실행
+
+jobs:
+  keep_alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send request to keep app awake
+        run: curl -s https://entrychecker.onrender.com/ > /dev/null
