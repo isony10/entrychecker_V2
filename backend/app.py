@@ -29,8 +29,9 @@ def clean_nan(obj):
 
 def read_file_to_df(file):
     filename = file.filename
-    if filename.endswith('.csv'):
-        enc_try = ['cp949', 'utf-8-sig', 'utf-8']
+    lower_name = filename.lower()
+    if lower_name.endswith('.csv'):
+        enc_try = ['utf-8-sig', 'utf-8', 'cp949', 'euc-kr']
         for enc in enc_try:
             try:
                 file.seek(0)
@@ -39,7 +40,7 @@ def read_file_to_df(file):
                 if not df.empty and len(df.columns) > 0: return df
             except Exception: continue
         raise ValueError("CSV 파일을 읽는 데 실패했습니다. 인코딩 또는 구분자를 확인해주세요.")
-    elif filename.endswith(('.xls', '.xlsx')):
+    elif lower_name.endswith(('.xls', '.xlsx')):
         file.seek(0)
         # dtype=str 옵션을 추가하여 모든 데이터를 문자열로 읽어옵니다.
         return pd.read_excel(file, engine='openpyxl', dtype=str).fillna('')
@@ -52,8 +53,9 @@ def preview():
     file = request.files['file']
     try:
         df = read_file_to_df(file)
-        headers = df.columns.tolist()
-        rows = df.to_dict(orient='records')
+        analyzed = analyze_journal(df, [], {}, 'AND', {})
+        headers = analyzed['headers']
+        rows = analyzed['rows']
         result = {'headers': headers, 'rows': rows}
         cleaned = clean_nan(result)
         return Response(json.dumps(cleaned, ensure_ascii=False), mimetype='application/json')

@@ -191,7 +191,6 @@ async function runRuleBasedAnalysis() {
     const f = $file.files[0];
     if (!f) { logMsg('파일을 먼저 선택하세요.', 'error'); return; }
     const activeRules = [...collectRuleIds(logicTree)];
-    if (!activeRules.length) { logMsg('활성화된 규칙이 없습니다.', 'error'); return; }
     const vals = collectValues(logicTree);
     const fd = new FormData();
     fd.append('file', f); fd.append('active_rules', JSON.stringify(activeRules)); fd.append('values', JSON.stringify(vals)); fd.append('logic_op', 'AND'); fd.append('logic_tree', JSON.stringify(logicTree));
@@ -214,7 +213,7 @@ async function runRuleBasedAnalysis() {
         const displayedHighlightSet = new Set();
         rowsToDisplay.forEach((r, i) => { if (hi.has(r.__idx)) displayedHighlightSet.add(i); });
         renderTable(rowsToDisplay, displayedHighlightSet, lastRuleMap);
-        logMsg(`규칙 기반 분석 완료 – ${hi.size}개 분개 확인`, 'success');
+        logMsg(`규칙 기반 분석 완료 – Tx코드 생성, ${hi.size}개 분개 확인`, 'success');
     } catch (e) { logMsg('분석 오류: ' + e.message, 'error'); } finally { showLoading(false); }
 }
 
