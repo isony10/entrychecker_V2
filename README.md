@@ -33,7 +33,7 @@ EntryChecker는 다음의 **두 가지 핵심 기능**으로 구성되어 있습
   분석 결과는 테이블 형태로 제공되며, 조건에 부합하는 분개는 강조 표시됩니다.  
   `전표세트 전체 강조`, `일치하는 분개만 보기` 기능으로 필요한 데이터만 효율적으로 확인할 수 있습니다.
 
-  아래 이미지를 클릭하시면 시연 영상 페이지가 열립니다.
+  아래 이미지를 클릭하시면 시연 영상 페이지가 열립니다. ( Github : https://github.com/isony10/EntryChecker )
 
   [![Video Label](http://img.youtube.com/vi/bsKe-iougK0/0.jpg)](https://youtu.be/bsKe-iougK0)
 
