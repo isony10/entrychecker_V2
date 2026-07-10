@@ -56,7 +56,7 @@ def preview():
         analyzed = analyze_journal(df, [], {}, 'AND', {})
         headers = analyzed['headers']
         rows = analyzed['rows']
-        result = {'headers': headers, 'rows': rows}
+        result = {'headers': headers, 'rows': rows, 'tax_summary': analyzed.get('tax_summary', [])}
         cleaned = clean_nan(result)
         return Response(json.dumps(cleaned, ensure_ascii=False), mimetype='application/json')
     except Exception as e:

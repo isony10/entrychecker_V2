@@ -16,6 +16,7 @@ const $runAnalysis = document.getElementById('run-analysis');
 const $runAiVoucherAnalysis = document.getElementById('run-ai-voucher-analysis');
 const $logicTree = document.getElementById('logic-tree');
 const $log = document.getElementById('log-content');
+const $taxSummary = document.getElementById('tax-summary');
 const $tableContainer = document.getElementById('table-container');
 const $aiVoucherResultsContainer = document.getElementById('ai-voucher-results-container');
 const $tableWrap = $tableContainer;
@@ -26,6 +27,7 @@ const $loading = document.getElementById('loading');
 const $modal = document.getElementById('ai-modal');
 const $modalBody = document.getElementById('modal-body');
 const $closeModalBtn = document.getElementById('close-modal-btn');
+let lastTaxSummary = [];
 
 function newGroup() { return { id: nextId++, type: 'group', op: 'AND', items: [] }; }
 function newCond(rule) {
@@ -118,6 +120,48 @@ function collectValues(tree, vals = {}) { for (const it of tree.items) { if (it.
 
 function logMsg(msg, type = 'info') { const p = document.createElement('p'); p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`; if (type === 'error') p.classList.add('text-red-400'); if (type === 'success') p.classList.add('text-green-400'); $log.prepend(p); }
 function showLoading(show) { $loading.classList.toggle('hidden', !show); $loading.classList.toggle('flex', show); }
+function formatWon(v) { return Number(v || 0).toLocaleString(); }
+
+function renderTaxSummary(summary = []) {
+  lastTaxSummary = summary;
+  if (!summary.length) {
+    $taxSummary.classList.add('hidden');
+    $taxSummary.innerHTML = '';
+    return;
+  }
+  $taxSummary.classList.remove('hidden');
+  $taxSummary.innerHTML = `
+    <div class="border rounded-lg overflow-hidden">
+      <div class="px-3 py-2 bg-gray-50 border-b flex items-center justify-between">
+        <h4 class="font-bold text-sm text-gray-700">Tx 추천 요약</h4>
+        <span class="text-xs text-gray-500">자동 추천값입니다. 신고 전 수동 검토가 필요합니다.</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs text-left">
+          <thead class="bg-white">
+            <tr>
+              <th class="p-2 border-b">추천코드</th>
+              <th class="p-2 border-b">분류</th>
+              <th class="p-2 border-b text-right">분개수</th>
+              <th class="p-2 border-b text-right">차변합계</th>
+              <th class="p-2 border-b text-right">대변합계</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${summary.map(r => `
+              <tr class="border-b last:border-b-0">
+                <td class="p-2 font-semibold">${r.code}</td>
+                <td class="p-2">${r.label}</td>
+                <td class="p-2 text-right">${formatWon(r.count)}</td>
+                <td class="p-2 text-right">${formatWon(r.debit_sum)}</td>
+                <td class="p-2 text-right">${formatWon(r.credit_sum)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
 
 function adjustColumnWidths(tbl) {
   const rows = Array.from(tbl.rows);
@@ -160,13 +204,23 @@ function renderTable(rows, hi = new Set(), ruleMap = {}) {
     const ruleId = isHighlighted && ruleMap[originalIndex] ? ruleMap[originalIndex][0] : null;
     const ruleName = ruleId ? Object.keys(ruleTitles)[ruleId - 1] : '';
     const coachButton = isHighlighted ? `<button class="ai-coach-btn text-blue-500 hover:text-blue-700" data-row-index="${originalIndex}" data-rule-name="${ruleName}" title="AI 코치에게 물어보기"><i class="fas fa-user-md"></i></button>` : '';
-    return `<tr class="border-b hover:bg-gray-50 ${cls}">${dataHeaders.map(c => `<td class="p-2 whitespace-nowrap">${row[c] ?? ''}</td>`).join('')}<td class="p-2 text-center whitespace-nowrap">${coachButton}</td></tr>`;
+    return `<tr class="border-b hover:bg-gray-50 ${cls}">${dataHeaders.map(c => {
+      if (c === '검토상태') {
+        const value = row[c] || '미검토';
+        if (!row['Tx추천코드']) return '<td class="p-2 whitespace-nowrap"></td>';
+        return `<td class="p-2 whitespace-nowrap"><select class="review-status border rounded px-1 py-0.5 text-xs bg-white" data-row-index="${originalIndex}">
+          ${['미검토', '확인완료', '수정필요', '보류'].map(opt => `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`).join('')}
+        </select></td>`;
+      }
+      return `<td class="p-2 whitespace-nowrap">${row[c] ?? ''}</td>`;
+    }).join('')}<td class="p-2 text-center whitespace-nowrap">${coachButton}</td></tr>`;
   }).join('')}</tbody>`;
   tbl.innerHTML = head + body;
   $tableWrap.innerHTML = ''; $tableWrap.appendChild(tbl); adjustColumnWidths(tbl);
 }
 
 function renderAiVoucherResults(results) {
+    $taxSummary.classList.add('hidden');
     $tableWrap.classList.add('hidden');
     $aiVoucherResults.classList.remove('hidden');
     $aiVoucherResults.innerHTML = '';
@@ -201,6 +255,7 @@ async function runRuleBasedAnalysis() {
         const data = await res.json();
         dataHeaders = data.headers; originalJournalData = data.rows;
         journalData = data.rows.map((r, i) => ({ ...r, __idx: i }));
+        renderTaxSummary(data.tax_summary || []);
         lastRuleMap = {}; for (const k in data.rule_map) lastRuleMap[+k] = data.rule_map[k];
         const flagged = new Set(data.flagged_indices);
         let hi = new Set(flagged);
@@ -261,6 +316,7 @@ document.addEventListener('DOMContentLoaded', () => {
             originalJournalData = data.rows;
             dataHeaders = data.headers;
             journalData = originalJournalData.map((r, i) => ({ ...r, __idx: i }));
+            renderTaxSummary(data.tax_summary || []);
             renderTable(journalData);
             logMsg('파일 파싱 및 미리보기 완료', 'success');
         } catch (err) {
@@ -277,6 +333,13 @@ document.addEventListener('DOMContentLoaded', () => {
     $closeModalBtn.onclick = () => $modal.classList.add('hidden');
     $modal.onclick = (e) => { if (e.target === $modal) $modal.classList.add('hidden'); };
     $tableContainer.onclick = e => { const btn = e.target.closest('.ai-coach-btn'); if (btn) { const rowIndex = parseInt(btn.dataset.rowIndex); const ruleName = btn.dataset.ruleName; const entryData = originalJournalData[rowIndex]; getAiCoaching(entryData, ruleName); } };
+    $tableContainer.onchange = e => {
+        const sel = e.target.closest('.review-status');
+        if (!sel) return;
+        const rowIndex = parseInt(sel.dataset.rowIndex);
+        if (originalJournalData[rowIndex]) originalJournalData[rowIndex]['검토상태'] = sel.value;
+        if (journalData[rowIndex]) journalData[rowIndex]['검토상태'] = sel.value;
+    };
     document.getElementById('add-condition-btn').onclick = () => { const sel = document.getElementById('condition-select').value; logicTree.items.push(newCond(sel)); renderTree(); };
     document.getElementById('add-group-btn').onclick = () => { logicTree.items.push(newGroup()); renderTree(); };
     logMsg('EntryChecker가 준비되었습니다. 파일을 업로드하고 분석을 시작하세요.');

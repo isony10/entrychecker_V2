@@ -1,6 +1,8 @@
 import pandas as pd
 import re
 import holidays
+import json
+from pathlib import Path
 
 KR_HOLIDAYS = holidays.KR()  # 대한민국 공휴일
 
@@ -10,29 +12,18 @@ ACCOUNT_COL_ALIASES = ('계정과목', '계정명', '계정')
 DEBIT_COL_ALIASES = ('차변금액', '차변', '차변 금액')
 CREDIT_COL_ALIASES = ('대변금액', '대변', '대변 금액')
 
-TAX_CODE_LABELS = {
-    'TX01': '과세매출',
-    'TX02': '영세율매출',
-    'TX03': '면세매출',
-    'TX11': '과세매입',
-    'TX12': '안분매입',
-    'TX13': '면세매입',
-    'TX14': '불공제매입(과세)',
-    'TX91': '매출부가세',
-    'TX92': '매입부가세',
-    'TX00': '대상외',
-}
+TAX_RULES_PATH = Path(__file__).with_name('tax_rules.json')
 
-ZERO_RATE_KEYWORDS = ('영세', '수출', '직수출', '간접수출', '내국신용장', '구매확인서', '국외')
-EXEMPT_KEYWORDS = ('면세', '비과세', '토지', '보험료', '의료', '교육', '도서', '미가공', '농산', '수산', '축산', '주택임대')
-NON_DEDUCTIBLE_KEYWORDS = ('불공제', '접대', '접대비', '승용차', '비영업용', '업무무관', '간이영수증', '개인카드')
-ALLOCATION_KEYWORDS = ('안분', '공통매입', '공통', '겸영', '과면세', '공통비')
-SALES_KEYWORDS = ('매출', '수입수수료', '임대수익', '용역수익')
-PURCHASE_KEYWORDS = (
-    '매입', '상품', '원재료', '재료', '외주', '복리후생비', '소모품', '운반비',
-    '광고', '임차', '지급수수료', '수선', '여비', '교육훈련', '차량', '통신',
-    '전력', '수도', '도서', '보험', '접대'
-)
+
+def _load_tax_rules():
+    with TAX_RULES_PATH.open(encoding='utf-8') as f:
+        return json.load(f)
+
+
+TAX_RULES = _load_tax_rules()
+TAX_CODE_LABELS = TAX_RULES['labels']
+TAX_KEYWORDS = TAX_RULES['keyword_groups']
+TAX_CONFIDENCE = TAX_RULES['confidence']
 
 
 def _find_col(df, candidates):
@@ -96,15 +87,16 @@ def _add_or_replace_column(df, name, values, after_col=None):
         df[name] = values
 
 
-def add_tax_codes(df):
-    """전표 단위 부가세 라인과 계정/적요 키워드로 Tx코드를 추정해 붙인다."""
+def add_tax_recommendations(df):
+    """전표 단위 부가세 라인과 계정/적요 키워드로 Tx 추천코드를 붙인다."""
     account_col = _find_col(df, ACCOUNT_COL_ALIASES)
     voucher_col = _find_col(df, VOUCHER_COL_ALIASES)
     account_text = _text_series(df, ACCOUNT_COL_ALIASES).str.lower()
     row_text = _make_row_text(df)
 
-    tax_codes = pd.Series('TX00', index=df.index, dtype='object')
-    tax_reasons = pd.Series('세금코드 대상 계정 아님', index=df.index, dtype='object')
+    tax_codes = pd.Series('', index=df.index, dtype='object')
+    tax_confidence = pd.Series('', index=df.index, dtype='object')
+    tax_reasons = pd.Series('', index=df.index, dtype='object')
     group_keys = df[voucher_col] if voucher_col is not None else pd.Series(df.index, index=df.index)
 
     for _, group in df.groupby(group_keys, dropna=False, sort=False):
@@ -117,50 +109,112 @@ def add_tax_codes(df):
         for row_idx in idx:
             text = row_text.at[row_idx]
             acct = account_text.at[row_idx]
-            context = f'{text} {group_text}'
             debit = df.at[row_idx, '차변금액']
             credit = df.at[row_idx, '대변금액']
+            is_negative = debit < 0 or credit < 0
+            adjustment_note = ' + 음수 금액(취소/차감 가능성)' if is_negative else ''
 
             if '부가세예수' in acct:
                 tax_codes.at[row_idx] = 'TX91'
+                tax_confidence.at[row_idx] = TAX_CONFIDENCE['vat_line']
                 tax_reasons.at[row_idx] = '부가세예수금 계정'
                 continue
 
             if re.search(r'부가세대급|선급부가세', acct):
                 tax_codes.at[row_idx] = 'TX92'
+                tax_confidence.at[row_idx] = TAX_CONFIDENCE['vat_line']
                 tax_reasons.at[row_idx] = '부가세대급금 계정'
                 continue
 
-            if credit > 0 and _contains_any(acct, SALES_KEYWORDS):
-                if _contains_any(context, ZERO_RATE_KEYWORDS):
+            if credit != 0 and _contains_any(acct, TAX_KEYWORDS['sales']):
+                if _contains_any(text, TAX_KEYWORDS['zero_rate']):
                     tax_codes.at[row_idx] = 'TX02'
-                    tax_reasons.at[row_idx] = '영세율/수출 관련 단서'
-                elif _contains_any(context, EXEMPT_KEYWORDS):
+                    tax_confidence.at[row_idx] = (
+                        TAX_CONFIDENCE['negative_adjustment']
+                        if is_negative else TAX_CONFIDENCE['zero_rate_keyword']
+                    )
+                    tax_reasons.at[row_idx] = '영세율/수출 관련 단서' + adjustment_note
+                elif _contains_any(text, TAX_KEYWORDS['exempt']):
                     tax_codes.at[row_idx] = 'TX03'
-                    tax_reasons.at[row_idx] = '면세 관련 단서'
+                    tax_confidence.at[row_idx] = (
+                        TAX_CONFIDENCE['negative_adjustment']
+                        if is_negative else TAX_CONFIDENCE['exempt_keyword']
+                    )
+                    tax_reasons.at[row_idx] = '면세 관련 단서' + adjustment_note
                 else:
                     tax_codes.at[row_idx] = 'TX01'
-                    tax_reasons.at[row_idx] = '매출 계정' + (' + 같은 전표 부가세예수금' if has_output_vat else '')
+                    tax_confidence.at[row_idx] = (
+                        TAX_CONFIDENCE['negative_adjustment']
+                        if is_negative else
+                        TAX_CONFIDENCE['sales_with_output_vat']
+                        if has_output_vat else TAX_CONFIDENCE['sales_account_only']
+                    )
+                    tax_reasons.at[row_idx] = '매출 계정' + (' + 같은 전표 부가세예수금' if has_output_vat else '') + adjustment_note
                 continue
 
-            if debit > 0 and _contains_any(acct, PURCHASE_KEYWORDS):
-                if _contains_any(context, NON_DEDUCTIBLE_KEYWORDS):
+            if debit != 0 and _contains_any(acct, TAX_KEYWORDS['purchase']):
+                if _contains_any(text, TAX_KEYWORDS['non_deductible']):
                     tax_codes.at[row_idx] = 'TX14'
-                    tax_reasons.at[row_idx] = '불공제 매입 관련 단서'
-                elif _contains_any(context, ALLOCATION_KEYWORDS):
+                    tax_confidence.at[row_idx] = (
+                        TAX_CONFIDENCE['negative_adjustment']
+                        if is_negative else TAX_CONFIDENCE['non_deductible_keyword']
+                    )
+                    tax_reasons.at[row_idx] = '불공제 매입 관련 단서' + adjustment_note
+                elif _contains_any(text, TAX_KEYWORDS['allocation']):
                     tax_codes.at[row_idx] = 'TX12'
-                    tax_reasons.at[row_idx] = '공통매입/안분 관련 단서'
-                elif _contains_any(context, EXEMPT_KEYWORDS):
+                    tax_confidence.at[row_idx] = (
+                        TAX_CONFIDENCE['negative_adjustment']
+                        if is_negative else TAX_CONFIDENCE['allocation_keyword']
+                    )
+                    tax_reasons.at[row_idx] = '공통매입/안분 관련 단서' + adjustment_note
+                elif _contains_any(text, TAX_KEYWORDS['exempt']):
                     tax_codes.at[row_idx] = 'TX13'
-                    tax_reasons.at[row_idx] = '면세 매입 관련 단서'
+                    tax_confidence.at[row_idx] = (
+                        TAX_CONFIDENCE['negative_adjustment']
+                        if is_negative else TAX_CONFIDENCE['exempt_purchase_keyword']
+                    )
+                    tax_reasons.at[row_idx] = '면세 매입 관련 단서' + adjustment_note
                 else:
                     tax_codes.at[row_idx] = 'TX11'
-                    tax_reasons.at[row_idx] = '매입/비용 계정' + (' + 같은 전표 부가세대급금' if has_input_vat else '')
+                    tax_confidence.at[row_idx] = (
+                        TAX_CONFIDENCE['negative_adjustment']
+                        if is_negative else
+                        TAX_CONFIDENCE['purchase_with_input_vat']
+                        if has_input_vat else TAX_CONFIDENCE['purchase_account_only']
+                    )
+                    tax_reasons.at[row_idx] = '매입/비용 계정' + (' + 같은 전표 부가세대급금' if has_input_vat else '') + adjustment_note
 
-    _add_or_replace_column(df, 'Tx코드', tax_codes, after_col=account_col)
-    _add_or_replace_column(df, 'Tx분류', tax_codes.map(TAX_CODE_LABELS), after_col='Tx코드')
-    _add_or_replace_column(df, 'Tx근거', tax_reasons, after_col='Tx분류')
+    review_status = tax_codes.map(lambda code: '미검토' if code else '')
+    _add_or_replace_column(df, 'Tx추천코드', tax_codes, after_col=account_col)
+    _add_or_replace_column(df, 'Tx분류', tax_codes.map(TAX_CODE_LABELS).fillna(''), after_col='Tx추천코드')
+    _add_or_replace_column(
+        df,
+        'Tx신뢰도',
+        tax_confidence.map(lambda v: f'{int(v)}%' if v != '' else ''),
+        after_col='Tx분류',
+    )
+    _add_or_replace_column(df, 'Tx근거', tax_reasons, after_col='Tx신뢰도')
+    _add_or_replace_column(df, '검토상태', review_status, after_col='Tx근거')
     return df
+
+
+def build_tax_summary(df):
+    if 'Tx추천코드' not in df.columns:
+        return []
+
+    summary = []
+    for code, label in TAX_CODE_LABELS.items():
+        mask = df['Tx추천코드'].fillna('') == code
+        if not mask.any():
+            continue
+        summary.append({
+            'code': code,
+            'label': label,
+            'count': int(mask.sum()),
+            'debit_sum': int(round(df.loc[mask, '차변금액'].sum())),
+            'credit_sum': int(round(df.loc[mask, '대변금액'].sum())),
+        })
+    return summary
 
 def _parse_dates(series):
     """YYYYMMDD ‧ 엑셀 직렬값 ‧ 문자열 등 어떤 형태든 datetime64로."""
@@ -292,7 +346,8 @@ def analyze_journal(
     # ───────────────── 1. 숫자 열 변환 ──────────────────
     df['차변금액'] = _amount_series(df, DEBIT_COL_ALIASES)
     df['대변금액'] = _amount_series(df, CREDIT_COL_ALIASES)
-    add_tax_codes(df)
+    add_tax_recommendations(df)
+    tax_summary = build_tax_summary(df)
 
     # ───────────────── 2. 규칙별 mask 계산 ──────────────────
     masks = []  # 모든 mask 리스트 (순서 유지)
@@ -449,6 +504,7 @@ def analyze_journal(
     return {
         "headers": list(df.columns),
         "rows": df_disp.to_dict('records'),
+        "tax_summary": tax_summary,
         "flagged_indices": flagged,
         "rule_map": {str(k): v for k, v in rule_map.items()}
     }
