@@ -4,6 +4,8 @@ import holidays
 
 KR_HOLIDAYS = holidays.KR()  # 대한민국 공휴일
 
+VAT_RATE = 0.1  # 부가가치세율 10%
+
 DATE_COL_ALIASES = ('전표일자', '거래일자', '일자', '날짜')
 VOUCHER_COL_ALIASES = ('전표번호', '전표 no', '전표NO', 'voucher_no')
 ACCOUNT_COL_ALIASES = ('계정과목', '계정명', '계정')
@@ -28,11 +30,29 @@ EXEMPT_KEYWORDS = ('면세', '비과세', '토지', '보험료', '의료', '교�
 NON_DEDUCTIBLE_KEYWORDS = ('불공제', '접대', '접대비', '승용차', '비영업용', '업무무관', '간이영수증', '개인카드')
 ALLOCATION_KEYWORDS = ('안분', '공통매입', '공통', '겸영', '과면세', '공통비')
 SALES_KEYWORDS = ('매출', '수입수수료', '임대수익', '용역수익')
+# 부가세 과세 대상이 아닌 채권·채무·정산 계정. '매출/매입' 글자를 포함해도 세금코드 대상에서 제외.
+SETTLEMENT_KEYWORDS = ('외상매출금', '외상매입금', '매출채권', '매입채무', '받을어음', '지급어음', '미수금')
 PURCHASE_KEYWORDS = (
     '매입', '상품', '원재료', '재료', '외주', '복리후생비', '소모품', '운반비',
     '광고', '임차', '지급수수료', '수선', '여비', '교육훈련', '차량', '통신',
     '전력', '수도', '도서', '보험', '접대'
 )
+
+
+def _group_keys(df):
+    """전표 단위 그룹키. 전표번호는 날짜별로 재사용되므로 (전표일자, 전표번호)로 묶는다.
+
+    날짜/번호 열이 없으면 있는 것만, 둘 다 없으면 행 인덱스(전표 미분류)로 대체.
+    """
+    date_col = _find_col(df, DATE_COL_ALIASES)
+    voucher_col = _find_col(df, VOUCHER_COL_ALIASES)
+    parts = [df[col].astype(str) for col in (date_col, voucher_col) if col is not None]
+    if not parts:
+        return pd.Series(df.index, index=df.index)
+    key = parts[0]
+    for extra in parts[1:]:
+        key = key.str.cat(extra, sep='|')
+    return key
 
 
 def _find_col(df, candidates):
@@ -102,13 +122,12 @@ def _add_or_replace_column(df, name, values, after_col=None):
 def add_tax_codes(df):
     """전표 단위 부가세 라인과 계정/적요 키워드로 Tx코드를 추정해 붙인다."""
     account_col = _find_col(df, ACCOUNT_COL_ALIASES)
-    voucher_col = _find_col(df, VOUCHER_COL_ALIASES)
     account_text = _text_series(df, ACCOUNT_COL_ALIASES).str.lower()
     row_text = _make_row_text(df)
 
     tax_codes = pd.Series('TX00', index=df.index, dtype='object')
     tax_reasons = pd.Series('세금코드 대상 계정 아님', index=df.index, dtype='object')
-    group_keys = df[voucher_col] if voucher_col is not None else pd.Series(df.index, index=df.index)
+    group_keys = _group_keys(df)
 
     for _, group in df.groupby(group_keys, dropna=False, sort=False):
         idx = group.index
@@ -132,6 +151,10 @@ def add_tax_codes(df):
             if re.search(r'부가세대급|선급부가세', acct):
                 tax_codes.at[row_idx] = 'TX92'
                 tax_reasons.at[row_idx] = '부가세대급금 계정'
+                continue
+
+            if _contains_any(acct, SETTLEMENT_KEYWORDS):
+                tax_reasons.at[row_idx] = '채권·채무/정산 계정 (세금코드 대상 아님)'
                 continue
 
             if credit > 0 and _contains_any(acct, SALES_KEYWORDS):
@@ -227,6 +250,81 @@ def flag_keyword(df, keywords):
     pattern = '|'.join(re.escape(k) for k in kw_list)
     return _text_series(df, ACCOUNT_COL_ALIASES).str.contains(pattern, na=False)
 
+def _won(value):
+    """금액을 원 단위 정수 문자열(천단위 콤마)로."""
+    return f'{int(round(value)):,}'
+
+
+def flag_wrong_tax_code(df):
+    """추정된 Tx코드를 부가세 회계 논리로 재검증해 오류 라인을 표시한다.
+
+    add_tax_codes()가 먼저 실행되어 'Tx코드' 열이 있어야 한다.
+    반환값: (boolean Series, 오류사유 Series)
+    """
+    flags = pd.Series(False, index=df.index)
+    reasons = pd.Series('', index=df.index, dtype='object')
+
+    if 'Tx코드' not in df.columns:
+        return flags, reasons
+
+    tx = df['Tx코드']
+    debit = df['차변금액']
+    credit = df['대변금액']
+
+    group_keys = _group_keys(df)
+
+    def _flag(idx_list, reason):
+        for i in idx_list:
+            flags.at[i] = True
+            reasons.at[i] = f'{reasons.at[i]}; {reason}'.lstrip('; ') if reasons.at[i] else reason
+
+    def _mismatch(actual, expected):
+        tol = max(1.0, expected * 0.005)  # 원 단위 절사 등 반올림 오차 허용
+        return abs(actual - expected) > tol
+
+    for _, group in df.groupby(group_keys, dropna=False, sort=False):
+        idx = group.index
+        gtx = tx.loc[idx]
+
+        taxable_sales_idx = idx[(gtx == 'TX01').to_numpy()]
+        output_vat_idx = idx[(gtx == 'TX91').to_numpy()]
+        taxable_purchase_idx = idx[(gtx == 'TX11').to_numpy()]
+        input_vat_idx = idx[(gtx == 'TX92').to_numpy()]
+
+        taxable_sales = credit.loc[taxable_sales_idx].sum()
+        output_vat = credit.loc[output_vat_idx].sum()
+        taxable_purchase = debit.loc[taxable_purchase_idx].sum()
+        input_vat = debit.loc[input_vat_idx].sum()
+
+        # ── 매출 측 검증 ──
+        if output_vat > 1 and len(taxable_sales_idx) == 0:
+            _flag(output_vat_idx, '부가세예수금이나 같은 전표에 과세매출 없음')
+        elif len(taxable_sales_idx):
+            expected = taxable_sales * VAT_RATE
+            if len(output_vat_idx) == 0:
+                _flag(taxable_sales_idx, '과세매출이나 부가세예수금 라인 없음(매출세액 누락 의심)')
+            elif _mismatch(output_vat, expected):
+                _flag(output_vat_idx,
+                      f'매출세액 불일치(예상 {_won(expected)}, 실제 {_won(output_vat)})')
+
+        # ── 매입 측 검증 ──
+        if input_vat > 1 and len(taxable_purchase_idx) == 0:
+            _flag(input_vat_idx, '부가세대급금이나 같은 전표에 과세매입 없음')
+        elif len(taxable_purchase_idx):
+            expected = taxable_purchase * VAT_RATE
+            if len(input_vat_idx) == 0:
+                _flag(taxable_purchase_idx, '과세매입이나 부가세대급금 라인 없음(매입세액 누락 의심)')
+            elif _mismatch(input_vat, expected):
+                _flag(input_vat_idx,
+                      f'매입세액 불일치(예상 {_won(expected)}, 실제 {_won(input_vat)})')
+
+    return flags, reasons
+
+
+# 규칙 실행 순서 (프론트 rule 카드 순서와 1:1로 맞춰야 함 → 카드 번호 = 순번)
+RULE_ORDER = ('weekend_txn', 'amount_over', 'keyword_search', 'wrong_tax_code')
+
+
 def analyze_journal(df, active_rules, rule_values):
     df = df.copy()
 
@@ -246,20 +344,22 @@ def analyze_journal(df, active_rules, rule_values):
         for idx in match_idx:
             rule_map[idx].append(num)
 
-    rule_num = 1
-    if 'weekend_txn' in active_rules:
-        add_rule(flag_weekend_txn(df), rule_num)
-    rule_num += 1
+    # 카드 순번(1부터)을 규칙 번호로 사용 → 프론트 카드 표시와 일치
+    for rule_num, rule_id in enumerate(RULE_ORDER, start=1):
+        if rule_id not in active_rules:
+            continue
 
-
-    if 'amount_over' in active_rules:
-        thr = float(rule_values.get('amount_over', 0))
-        add_rule(flag_amount_over(df, thr), rule_num)
-    rule_num += 1
-
-    if 'keyword_search' in active_rules:
-        kw = rule_values.get('keyword_search', '')
-        add_rule(flag_keyword(df, kw), rule_num)
+        if rule_id == 'weekend_txn':
+            add_rule(flag_weekend_txn(df), rule_num)
+        elif rule_id == 'amount_over':
+            thr = float(rule_values.get('amount_over', 0))
+            add_rule(flag_amount_over(df, thr), rule_num)
+        elif rule_id == 'keyword_search':
+            add_rule(flag_keyword(df, rule_values.get('keyword_search', '')), rule_num)
+        elif rule_id == 'wrong_tax_code':
+            wrong_flags, wrong_reasons = flag_wrong_tax_code(df)
+            _add_or_replace_column(df, 'TX검증', wrong_reasons, after_col='Tx근거')
+            add_rule(wrong_flags, rule_num)
 
     flagged_idx = flags[flags].index.tolist()
     headers = list(df.columns)

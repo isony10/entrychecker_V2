@@ -3,8 +3,8 @@
 const rules = [
   { id: 'weekend_txn', name: '주말·공휴일 거래', type: 'boolean', enabled: false },
   { id: 'amount_over',     name: '금액 초과',       type: 'input',   value: 10000000, enabled: false },
-  { id: 'keyword_search',  name: '특정 키워드',     type: 'input',   value: '가지급금,대여금', enabled: false }
-  
+  { id: 'keyword_search',  name: '특정 키워드',     type: 'input',   value: '가지급금,대여금', enabled: false },
+  { id: 'wrong_tax_code',  name: '잘못된 TX코드',   type: 'boolean', enabled: false }
 ];
 
 const fileInput       = document.getElementById('file-upload');
