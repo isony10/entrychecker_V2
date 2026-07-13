@@ -42,17 +42,25 @@ PURCHASE_KEYWORDS = (
 def _group_keys(df):
     """전표 단위 그룹키. 전표번호는 날짜별로 재사용되므로 (전표일자, 전표번호)로 묶는다.
 
-    날짜/번호 열이 없으면 있는 것만, 둘 다 없으면 행 인덱스(전표 미분류)로 대체.
+    날짜/번호 열이 없으면 있는 것만 사용한다. 어느 한쪽이라도 결측이면 무관한
+    전표끼리 'nan|nan' 같은 키로 뭉치지 않도록 해당 행을 고유 인덱스로 분리한다.
     """
     date_col = _find_col(df, DATE_COL_ALIASES)
     voucher_col = _find_col(df, VOUCHER_COL_ALIASES)
-    parts = [df[col].astype(str) for col in (date_col, voucher_col) if col is not None]
+    fallback = pd.Series(df.index, index=df.index).astype(str)
+
+    parts = []
+    for col in (date_col, voucher_col):
+        if col is not None:
+            s = df[col].astype(str).str.strip()
+            parts.append(s.where(~s.isin(['', 'nan', 'None', 'NaT']), other=pd.NA))
     if not parts:
-        return pd.Series(df.index, index=df.index)
+        return fallback
+
     key = parts[0]
     for extra in parts[1:]:
-        key = key.str.cat(extra, sep='|')
-    return key
+        key = key.str.cat(extra, sep='|')  # 어느 한쪽이 결측이면 결과도 NaN
+    return key.fillna(fallback)
 
 
 def _find_col(df, candidates):
@@ -279,7 +287,9 @@ def flag_wrong_tax_code(df):
             reasons.at[i] = f'{reasons.at[i]}; {reason}'.lstrip('; ') if reasons.at[i] else reason
 
     def _mismatch(actual, expected):
-        tol = max(1.0, expected * 0.005)  # 원 단위 절사 등 반올림 오차 허용
+        # 원 단위 절사 등 반올림 오차 허용. 단, 대액 거래에서 허용치가 과도하게
+        # 커져 실제 세액 오류를 놓치지 않도록 상한 100원.
+        tol = min(100.0, max(1.0, expected * 0.005))
         return abs(actual - expected) > tol
 
     for _, group in df.groupby(group_keys, dropna=False, sort=False):
