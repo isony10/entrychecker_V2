@@ -50,13 +50,14 @@ EXPECTED = [
 
 def main():
     csv_path = os.path.join(os.path.dirname(__file__), 'sample', '검증데이터.csv')
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(csv_path, encoding='utf-8-sig')
 
     result = analyze_journal(df, ['wrong_tax_code'], {})
     rows = result['rows']
 
-    assert len(rows) == len(EXPECTED), (
-        f'행 수 불일치: CSV {len(rows)} vs 기대 {len(EXPECTED)}')
+    if len(rows) != len(EXPECTED):
+        print(f'행 수 불일치: CSV {len(rows)} vs 기대 {len(EXPECTED)}', file=sys.stderr)
+        return 1
 
     header = f'{"#":>2} {"판정":<4} {"시나리오":<34} {"Tx":<5} {"검출된 TX검증"}'
     print(header)
