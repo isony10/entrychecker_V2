@@ -11,6 +11,7 @@ VOUCHER_COL_ALIASES = ('전표번호', '전표 no', '전표NO', 'voucher_no')
 ACCOUNT_COL_ALIASES = ('계정과목', '계정명', '계정')
 DEBIT_COL_ALIASES = ('차변금액', '차변', '차변 금액')
 CREDIT_COL_ALIASES = ('대변금액', '대변', '대변 금액')
+EXISTING_TAX_COL_ALIASES = ('부가세코드', 'Tx코드', '세무코드', '부가세유형', 'tax_code')
 
 TAX_RULES_PATH = Path(__file__).with_name('tax_rules.json')
 
@@ -198,6 +199,39 @@ def add_tax_recommendations(df):
     return df
 
 
+def validate_tax_codes(df):
+    """파일에 이미 입력된 부가세 코드를 Tx추천코드와 대사해 불일치를 표시한다."""
+    col = _find_col(df, EXISTING_TAX_COL_ALIASES)
+    if col is None or 'Tx추천코드' not in df.columns:
+        return None
+
+    existing = df[col].fillna('').astype(str).str.strip().str.upper()
+    recommended = df['Tx추천코드'].fillna('').astype(str)
+
+    # 원본 코드 열을 추천코드 바로 앞으로 옮겨 나란히 비교할 수 있게 한다
+    moved = df.pop(col)
+    df.insert(df.columns.get_loc('Tx추천코드'), col, moved)
+
+    result = pd.Series('', index=df.index, dtype='object')
+    both = (existing != '') & (recommended != '')
+    match_mask = both & (existing == recommended)
+    mismatch_mask = both & (existing != recommended)
+    only_existing = (existing != '') & (recommended == '')
+
+    result[match_mask] = '일치'
+    result[mismatch_mask] = '불일치'
+    result[only_existing] = '추천없음(수동확인)'
+
+    _add_or_replace_column(df, 'Tx검증', result, after_col='Tx근거')
+    return {
+        'checked': int(both.sum()),
+        'match': int(match_mask.sum()),
+        'mismatch': int(mismatch_mask.sum()),
+        'manual': int(only_existing.sum()),
+        'source_col': col,
+    }
+
+
 def build_tax_summary(df):
     if 'Tx추천코드' not in df.columns:
         return []
@@ -325,6 +359,12 @@ def flag_uniform_account(df):
     idx = list(zip(df['전표일자'], df['전표번호']))
     return pd.Series([(k in target_sets) for k in idx], index=df.index)
 
+def flag_tax_mismatch(df):
+    """입력된 부가세 코드와 Tx추천코드가 서로 다른 분개."""
+    if 'Tx검증' not in df.columns:
+        return pd.Series(False, index=df.index)
+    return df['Tx검증'].astype(str).str.startswith('불일치')
+
 def flag_unbalanced_set(df):
     """전표세트 차변 합과 대변 합이 일치하지 않음."""
     if not {'전표일자', '전표번호', '차변금액', '대변금액'}.issubset(df.columns):
@@ -347,6 +387,7 @@ def analyze_journal(
     df['차변금액'] = _amount_series(df, DEBIT_COL_ALIASES)
     df['대변금액'] = _amount_series(df, CREDIT_COL_ALIASES)
     add_tax_recommendations(df)
+    tax_validation = validate_tax_codes(df)
     tax_summary = build_tax_summary(df)
 
     # ───────────────── 2. 규칙별 mask 계산 ──────────────────
@@ -431,6 +472,15 @@ def analyze_journal(
                 rule_map[idx].append(rule_no)
         rule_no += 1
 
+        # Tx코드 검증 불일치
+        if 'tax_mismatch' in active_rules:
+            m = flag_tax_mismatch(df)
+            rule_masks['tax_mismatch'] = m
+            masks.append(m)
+            for idx in m[m].index:
+                rule_map[idx].append(rule_no)
+        rule_no += 1
+
     # ───────────────── 3. 모든 mask 결합 ────────────────────
     def eval_node(node) -> pd.Series:
         nonlocal rule_no
@@ -461,6 +511,8 @@ def analyze_journal(
                 m = flag_uniform_account(df)
             elif rule == 'unbalanced_set':
                 m = flag_unbalanced_set(df)
+            elif rule == 'tax_mismatch':
+                m = flag_tax_mismatch(df)
             else:
                 m = pd.Series(False, index=df.index)
             for idx in m[m].index:
@@ -505,6 +557,7 @@ def analyze_journal(
         "headers": list(df.columns),
         "rows": df_disp.to_dict('records'),
         "tax_summary": tax_summary,
+        "tax_validation": tax_validation,
         "flagged_indices": flagged,
         "rule_map": {str(k): v for k, v in rule_map.items()}
     }

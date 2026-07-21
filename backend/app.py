@@ -8,10 +8,7 @@ import json
 if __name__ == "__main__":
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-# --- AI 모듈 import 추가 ---
 from backend.analyzer import analyze_journal
-from backend.ai_coach import get_single_entry_suggestion
-from backend.ai_voucher_analyzer import analyze_voucher_sets_with_ai
 
 app = Flask(__name__,
             static_folder=os.path.join(os.path.dirname(__file__), '..', 'frontend', 'static'),
@@ -56,7 +53,7 @@ def preview():
         analyzed = analyze_journal(df, [], {}, 'AND', {})
         headers = analyzed['headers']
         rows = analyzed['rows']
-        result = {'headers': headers, 'rows': rows, 'tax_summary': analyzed.get('tax_summary', [])}
+        result = {'headers': headers, 'rows': rows, 'tax_summary': analyzed.get('tax_summary', []), 'tax_validation': analyzed.get('tax_validation')}
         cleaned = clean_nan(result)
         return Response(json.dumps(cleaned, ensure_ascii=False), mimetype='application/json')
     except Exception as e:
@@ -77,36 +74,6 @@ def analyze():
         return Response(json.dumps(cleaned, ensure_ascii=False), mimetype='application/json')
     except Exception as e:
         return f"분석 중 오류 발생: {str(e)}", 500
-
-# --- AI 전표세트 분석 API 엔드포인트 추가 ---
-@app.route('/ai_analyze_vouchers', methods=['POST'])
-def ai_analyze_vouchers():
-    if 'file' not in request.files: return jsonify({"error": "파일이 없습니다."}), 400
-    file = request.files['file']
-    try:
-        df = read_file_to_df(file)
-        df['차변금액'] = pd.to_numeric(df.get('차변금액', 0), errors='coerce').fillna(0)
-        df['대변금액'] = pd.to_numeric(df.get('대변금액', 0), errors='coerce').fillna(0)
-        results = analyze_voucher_sets_with_ai(df)
-        return jsonify(results)
-    except Exception as e:
-        print(f"AI 전표 분석 중 오류: {e}")
-        return jsonify({"error": f"AI 분석 중 오류가 발생했습니다: {str(e)}"}), 500
-
-# --- 개별 분개 AI 코칭 API 엔드포인트 추가 ---
-@app.route('/ai_coach', methods=['POST'])
-def ai_coach():
-    data = request.json
-    if not data or 'entry_data' not in data or 'rule_name' not in data:
-        return jsonify({"error": "필수 데이터가 누락되었습니다."}), 400
-    try:
-        entry_data = data['entry_data']
-        rule_name = data['rule_name']
-        suggestion = get_single_entry_suggestion(entry_data, rule_name)
-        return jsonify(suggestion)
-    except Exception as e:
-        print(f"AI 코칭 중 오류: {e}")
-        return jsonify({"error": f"AI 코칭 중 오류가 발생했습니다: {str(e)}"}), 500
 
 if __name__ == '__main__':
     # 호스트를 '0.0.0.0'으로 지정해야 클라우드 호스팅 환경에서 외부 접근이 가능하다

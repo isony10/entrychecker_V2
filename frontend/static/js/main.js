@@ -5,7 +5,8 @@ let nextId = 1;
 const ruleTitles = {
   weekend_txn: '주말·공휴일 거래', amount_over: '금액 조건', keyword_search: '특정 키워드',
   party_freq: '거래처별 거래 횟수', round_million: '백만단위 이하 0',
-  uniform_account: '동일 계정 전표세트', unbalanced_set: '차/대변 불일치 세트'
+  uniform_account: '동일 계정 전표세트', unbalanced_set: '차/대변 불일치 세트',
+  tax_mismatch: 'Tx코드 검증 불일치'
 };
 
 let dataHeaders = [], journalData = [], originalJournalData = [], lastRuleMap = {};
@@ -13,21 +14,16 @@ let dataHeaders = [], journalData = [], originalJournalData = [], lastRuleMap = 
 const $file = document.getElementById('file-upload');
 const $fileName = document.getElementById('file-name');
 const $runAnalysis = document.getElementById('run-analysis');
-const $runAiVoucherAnalysis = document.getElementById('run-ai-voucher-analysis');
 const $logicTree = document.getElementById('logic-tree');
 const $log = document.getElementById('log-content');
 const $taxSummary = document.getElementById('tax-summary');
 const $tableContainer = document.getElementById('table-container');
-const $aiVoucherResultsContainer = document.getElementById('ai-voucher-results-container');
 const $tableWrap = $tableContainer;
-const $aiVoucherResults = $aiVoucherResultsContainer;
 const $chkSet = document.getElementById('chk-whole-voucher');
 const $chkOnly = document.getElementById('chk-show-matching-only');
 const $loading = document.getElementById('loading');
-const $modal = document.getElementById('ai-modal');
-const $modalBody = document.getElementById('modal-body');
-const $closeModalBtn = document.getElementById('close-modal-btn');
 let lastTaxSummary = [];
+let lastTaxValidation = null;
 
 function newGroup() { return { id: nextId++, type: 'group', op: 'AND', items: [] }; }
 function newCond(rule) {
@@ -122,20 +118,32 @@ function logMsg(msg, type = 'info') { const p = document.createElement('p'); p.t
 function showLoading(show) { $loading.classList.toggle('hidden', !show); $loading.classList.toggle('flex', show); }
 function formatWon(v) { return Number(v || 0).toLocaleString(); }
 
-function renderTaxSummary(summary = []) {
+function renderTaxSummary(summary = [], validation = null) {
   lastTaxSummary = summary;
+  lastTaxValidation = validation;
   if (!summary.length) {
     $taxSummary.classList.add('hidden');
     $taxSummary.innerHTML = '';
     return;
   }
+  const validationHtml = validation ? `
+      <div class="px-3 py-2 border-b text-xs flex items-center gap-3 ${validation.mismatch > 0 ? 'bg-red-50' : 'bg-green-50'}">
+        <span class="font-bold ${validation.mismatch > 0 ? 'text-red-700' : 'text-green-700'}">
+          <i class="fas ${validation.mismatch > 0 ? 'fa-triangle-exclamation' : 'fa-circle-check'} mr-1"></i>Tx코드 검증
+        </span>
+        <span class="text-gray-600">대사 ${formatWon(validation.checked)}건</span>
+        <span class="text-green-700">일치 ${formatWon(validation.match)}건</span>
+        <span class="${validation.mismatch > 0 ? 'text-red-700 font-bold' : 'text-gray-600'}">불일치 ${formatWon(validation.mismatch)}건</span>
+        ${validation.manual > 0 ? `<span class="text-amber-700">추천없음(수동확인) ${formatWon(validation.manual)}건</span>` : ''}
+        ${validation.mismatch > 0 ? `<span class="text-gray-500 ml-auto">'Tx코드 검증 불일치' 조건으로 해당 분개를 강조할 수 있습니다.</span>` : ''}
+      </div>` : '';
   $taxSummary.classList.remove('hidden');
   $taxSummary.innerHTML = `
     <div class="border rounded-lg overflow-hidden">
       <div class="px-3 py-2 bg-gray-50 border-b flex items-center justify-between">
         <h4 class="font-bold text-sm text-gray-700">Tx 추천 요약</h4>
         <span class="text-xs text-gray-500">자동 추천값입니다. 신고 전 수동 검토가 필요합니다.</span>
-      </div>
+      </div>${validationHtml}
       <div class="overflow-x-auto">
         <table class="w-full text-xs text-left">
           <thead class="bg-white">
@@ -183,7 +191,6 @@ function adjustColumnWidths(tbl) {
 }
 
 function renderTable(rows, hi = new Set(), ruleMap = {}) {
-  $aiVoucherResults.classList.add('hidden');
   $tableWrap.classList.remove('hidden');
   // Ensure the table container aligns to the start when displaying data
   $tableWrap.classList.remove('items-center', 'justify-center', 'flex');
@@ -195,15 +202,12 @@ function renderTable(rows, hi = new Set(), ruleMap = {}) {
     $tableWrap.innerHTML = '<p class="text-gray-500">표시할 데이터가 없습니다.</p>';
     return;
   }  const tbl = document.createElement('table'); tbl.className = 'text-sm text-left border-collapse';
-  const headers = [...dataHeaders, 'AI 코칭'];
+  const headers = [...dataHeaders];
   const head = `<thead class="bg-gray-100"><tr>${headers.map(h => `<th class="p-2 border-b font-semibold whitespace-nowrap">${h}</th>`).join('')}</tr></thead>`;
   const body = `<tbody>${rows.map((row, idx) => {
     const originalIndex = row.__idx;
     const isHighlighted = hi.has(idx);
     const cls = isHighlighted ? 'highlight' : '';
-    const ruleId = isHighlighted && ruleMap[originalIndex] ? ruleMap[originalIndex][0] : null;
-    const ruleName = ruleId ? Object.keys(ruleTitles)[ruleId - 1] : '';
-    const coachButton = isHighlighted ? `<button class="ai-coach-btn text-blue-500 hover:text-blue-700" data-row-index="${originalIndex}" data-rule-name="${ruleName}" title="AI 코치에게 물어보기"><i class="fas fa-user-md"></i></button>` : '';
     return `<tr class="border-b hover:bg-gray-50 ${cls}">${dataHeaders.map(c => {
       if (c === '검토상태') {
         const value = row[c] || '미검토';
@@ -212,33 +216,28 @@ function renderTable(rows, hi = new Set(), ruleMap = {}) {
           ${['미검토', '확인완료', '수정필요', '보류'].map(opt => `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`).join('')}
         </select></td>`;
       }
+      if (c === 'Tx검증') {
+        const v = String(row[c] ?? '');
+        if (v.startsWith('불일치')) return `<td class="p-2 whitespace-nowrap text-red-600 font-bold">${v}</td>`;
+        if (v === '일치') return `<td class="p-2 whitespace-nowrap text-green-600">${v}</td>`;
+        if (v.startsWith('추천없음')) return `<td class="p-2 whitespace-nowrap text-amber-600">${v}</td>`;
+        return `<td class="p-2 whitespace-nowrap">${v}</td>`;
+      }
+      if (lastTaxValidation && c === lastTaxValidation.source_col) {
+        const v = String(row[c] ?? '');
+        if (String(row['Tx검증'] ?? '').startsWith('불일치'))
+          return `<td class="p-2 whitespace-nowrap text-red-600 line-through" title="원본 코드 (수정 제시됨)">${v}</td>`;
+        return `<td class="p-2 whitespace-nowrap">${v}</td>`;
+      }
+      if (c === 'Tx추천코드' && String(row['Tx검증'] ?? '').startsWith('불일치')) {
+        const v = String(row[c] ?? '');
+        return `<td class="p-2 whitespace-nowrap text-green-700 font-bold" title="시스템이 제시한 수정 코드">${v} <span class="text-[10px] bg-green-100 text-green-800 px-1 rounded">수정제시</span></td>`;
+      }
       return `<td class="p-2 whitespace-nowrap">${row[c] ?? ''}</td>`;
-    }).join('')}<td class="p-2 text-center whitespace-nowrap">${coachButton}</td></tr>`;
+    }).join('')}</tr>`;
   }).join('')}</tbody>`;
   tbl.innerHTML = head + body;
   $tableWrap.innerHTML = ''; $tableWrap.appendChild(tbl); adjustColumnWidths(tbl);
-}
-
-function renderAiVoucherResults(results) {
-    $taxSummary.classList.add('hidden');
-    $tableWrap.classList.add('hidden');
-    $aiVoucherResults.classList.remove('hidden');
-    $aiVoucherResults.innerHTML = '';
-    if (!results || results.length === 0) { $aiVoucherResults.innerHTML = '<p class="text-gray-500 text-center p-8">AI 분석 결과, 특별한 회계적 오류가 발견되지 않았습니다.</p>'; return; }
-    const errorVouchers = results.filter(r => r.analysis.isError);
-    if (errorVouchers.length === 0) { $aiVoucherResults.innerHTML = '<p class="text-green-600 font-semibold text-center p-8">AI 분석 완료! 모든 전표가 대차평형의 원리를 만족합니다.</p>'; return; }
-    logMsg(`AI 전표세트 분석 완료. ${errorVouchers.length}개의 잠재적 오류 발견.`, 'success');
-    errorVouchers.forEach(voucher => {
-        const card = document.createElement('div');
-        card.className = 'voucher-card bg-white p-4 rounded-lg shadow-md mb-4';
-        const { analysis, entries } = voucher;
-        let entriesHtml = '<table class="w-full text-xs mt-3 border-t pt-3">';
-        entriesHtml += `<thead class="bg-gray-50"><tr>${['계정과목', '차변금액', '대변금액', '거래처', '적요'].map(h => `<th class="p-1 text-left font-medium whitespace-nowrap">${h}</th>`).join('')}</tr></thead><tbody>`;
-        entries.forEach(e => { entriesHtml += `<tr class="border-b"><td class="p-1 whitespace-nowrap">${e['계정과목'] || ''}</td><td class="p-1 text-right whitespace-nowrap">${e['차변금액'] ? parseInt(e['차변금액']).toLocaleString() : ''}</td><td class="p-1 text-right whitespace-nowrap">${e['대변금액'] ? parseInt(e['대변금액']).toLocaleString() : ''}</td><td class="p-1 whitespace-nowrap">${e['거래처'] || ''}</td><td class="p-1 whitespace-nowrap">${e['적요'] || ''}</td></tr>`; });
-        entriesHtml += '</tbody></table>';
-        card.innerHTML = `<div class="flex justify-between items-start"><div><span class="text-xs bg-red-100 text-red-800 font-bold px-2 py-1 rounded-full">${analysis.errorType}</span><h4 class="text-lg font-bold mt-1">전표일자: ${voucher.date} / 전표번호: ${voucher.voucherNo}</h4></div></div><div class="mt-3 space-y-3"><div><h5 class="font-semibold text-gray-700">🚨 오류 원인</h5><p class="text-sm text-gray-600 bg-gray-50 p-2 rounded">${analysis.cause.replace(/\n/g, '<br>')}</p></div><div><h5 class="font-semibold text-gray-700">💡 해결 방안</h5><p class="text-sm text-gray-600 bg-gray-50 p-2 rounded">${analysis.solution.replace(/\n/g, '<br>')}</p></div></div><details class="mt-3 text-sm"><summary class="cursor-pointer text-blue-600">관련 분개 보기</summary>${entriesHtml}</details>`;
-        $aiVoucherResults.appendChild(card);
-    });
 }
 
 async function runRuleBasedAnalysis() {
@@ -255,7 +254,7 @@ async function runRuleBasedAnalysis() {
         const data = await res.json();
         dataHeaders = data.headers; originalJournalData = data.rows;
         journalData = data.rows.map((r, i) => ({ ...r, __idx: i }));
-        renderTaxSummary(data.tax_summary || []);
+        renderTaxSummary(data.tax_summary || [], data.tax_validation);
         lastRuleMap = {}; for (const k in data.rule_map) lastRuleMap[+k] = data.rule_map[k];
         const flagged = new Set(data.flagged_indices);
         let hi = new Set(flagged);
@@ -270,33 +269,6 @@ async function runRuleBasedAnalysis() {
         renderTable(rowsToDisplay, displayedHighlightSet, lastRuleMap);
         logMsg(`규칙 기반 분석 완료 – Tx코드 생성, ${hi.size}개 분개 확인`, 'success');
     } catch (e) { logMsg('분석 오류: ' + e.message, 'error'); } finally { showLoading(false); }
-}
-
-async function runAiVoucherAnalysis() {
-    const f = $file.files[0];
-    if (!f) { logMsg('파일을 먼저 선택하세요.', 'error'); return; }
-    const fd = new FormData();
-    fd.append('file', f);
-    showLoading(true);
-    logMsg('AI 전표세트 분석을 시작합니다...', 'info');
-    try {
-        const res = await fetch('/ai_analyze_vouchers', { method: 'POST', body: fd });
-        if (!res.ok) { const errData = await res.json(); throw new Error(errData.error || '서버 응답 오류'); }
-        const data = await res.json();
-        renderAiVoucherResults(data);
-    } catch (e) { logMsg('AI 분석 오류: ' + e.message, 'error'); $aiVoucherResults.innerHTML = `<p class="text-red-500">${e.message}</p>`; } finally { showLoading(false); }
-}
-
-async function getAiCoaching(entryData, ruleName) {
-    if (!ruleName) { logMsg('규칙 정보를 찾을 수 없어 AI 코칭을 호출할 수 없습니다.', 'error'); return; }
-    $modalBody.innerHTML = '<div class="flex justify-center items-center p-8"><div class="loader"></div><span class="ml-4">AI 코치가 분석 중입니다...</span></div>';
-    $modal.classList.remove('hidden');
-    try {
-        const res = await fetch('/ai_coach', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entry_data: entryData, rule_name: ruleName }) });
-        if (!res.ok) { const errData = await res.json(); throw new Error(errData.error || '서버 응답 오류'); }
-        const data = await res.json();
-        $modalBody.innerHTML = `<div class="mb-4"><span class="text-sm bg-yellow-100 text-yellow-800 font-bold px-2 py-1 rounded-full">${data.errorType}</span></div><div><h4 class="font-semibold text-gray-700 text-lg">🤔 원인 분석</h4><p class="text-base text-gray-600 mt-1 bg-gray-50 p-3 rounded-md">${data.cause}</p></div><div><h4 class="font-semibold text-gray-700 text-lg">✅ 해결 방안</h4><div class="text-base text-gray-600 mt-1 bg-gray-50 p-3 rounded-md">${data.solution}</div></div>`;
-    } catch (e) { $modalBody.innerHTML = `<p class="text-red-500 p-4">AI 코칭 중 오류 발생: ${e.message}</p>`; logMsg('AI 코칭 오류: ' + e.message, 'error'); }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -316,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
             originalJournalData = data.rows;
             dataHeaders = data.headers;
             journalData = originalJournalData.map((r, i) => ({ ...r, __idx: i }));
-            renderTaxSummary(data.tax_summary || []);
+            renderTaxSummary(data.tax_summary || [], data.tax_validation);
             renderTable(journalData);
             logMsg('파일 파싱 및 미리보기 완료', 'success');
         } catch (err) {
@@ -328,11 +300,8 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             showLoading(false);
         }
-    };    $runAnalysis.onclick = runRuleBasedAnalysis;
-    $runAiVoucherAnalysis.onclick = runAiVoucherAnalysis;
-    $closeModalBtn.onclick = () => $modal.classList.add('hidden');
-    $modal.onclick = (e) => { if (e.target === $modal) $modal.classList.add('hidden'); };
-    $tableContainer.onclick = e => { const btn = e.target.closest('.ai-coach-btn'); if (btn) { const rowIndex = parseInt(btn.dataset.rowIndex); const ruleName = btn.dataset.ruleName; const entryData = originalJournalData[rowIndex]; getAiCoaching(entryData, ruleName); } };
+    };
+    $runAnalysis.onclick = runRuleBasedAnalysis;
     $tableContainer.onchange = e => {
         const sel = e.target.closest('.review-status');
         if (!sel) return;

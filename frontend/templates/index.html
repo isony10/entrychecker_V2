@@ -8,7 +8,7 @@
   </style>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>EntryChecker – AI 회계 코치</title>
+  <title>EntryChecker - 분개장 분석</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
@@ -17,10 +17,6 @@
     body { font-family: 'Noto Sans KR', sans-serif; }
     .highlight { background-color:#fff1f2 !important; }
     .highlight .highlight-cell { color:#be123c; font-weight:600; }
-    .voucher-card { border-left: 4px solid #ef4444; }
-    .modal-backdrop { background-color: rgba(0,0,0,0.5); }
-    .modal-content { animation: slide-down 0.3s ease-out; }
-    @keyframes slide-down { from { transform: translateY(-30px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
     .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
@@ -44,9 +40,6 @@
         <button id="run-analysis" class="bg-lime-500 hover:bg-lime-600 text-white font-bold py-2 px-4 rounded-lg flex items-center transition-colors" title="설정한 규칙에 따라 개별 분개를 검토합니다.">
           <i class="fas fa-tasks mr-2"></i> 규칙 기반 분석
         </button>
-        <button id="run-ai-voucher-analysis" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg flex items-center transition-colors" title="AI가 전표 단위로 종합적인 오류를 분석합니다.">
-          <i class="fas fa-robot mr-2"></i> AI 전표세트 분석
-        </button>
       </div>
     </div>
   </header>
@@ -69,6 +62,7 @@
             <option value="round_million">백만단위 이하 0</option>
             <option value="uniform_account">동일 계정 전표세트</option>
             <option value="unbalanced_set">차/대변 불일치 세트</option>
+            <option value="tax_mismatch">Tx코드 검증 불일치</option>
           </select>
           <button id="add-condition-btn" class="border px-2 py-1 rounded flex-shrink-0 bg-gray-100 hover:bg-gray-200">조건 추가</button>
           <button id="add-group-btn" class="border px-2 py-1 rounded flex-shrink-0 bg-gray-100 hover:bg-gray-200">조건 그룹 추가</button>
@@ -84,20 +78,9 @@
       <div id="display-area" class="flex-grow bg-white p-4 rounded-lg shadow overflow-auto">
         <div id="tax-summary" class="hidden mb-4"></div>
         <div id="table-container" class="w-full h-full flex items-center justify-center text-gray-400 overflow-x-auto"><p>분개장 파일을 불러오고 분석 버튼을 눌러주세요.</p></div>
-        <div id="ai-voucher-results-container" class="hidden space-y-6"></div>
       </div>
     </section>
   </main>
-
-  <div id="ai-modal" class="fixed inset-0 z-50 hidden items-center justify-center modal-backdrop">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl modal-content">
-        <div class="p-6 border-b border-gray-200 flex justify-between items-center">
-            <h3 class="text-xl font-bold text-gray-800 flex items-center"><i class="fas fa-user-md text-blue-500 mr-3"></i>AI 코치의 개별 진단</h3>
-            <button id="close-modal-btn" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
-        </div>
-        <div id="modal-body" class="p-6 space-y-4"></div>
-    </div>
-  </div>
 
   <script src="/static/js/main.js"></script>
 </body>
