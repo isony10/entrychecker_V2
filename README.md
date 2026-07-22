@@ -7,7 +7,7 @@
 감사인이 직접 검토 조건을 구성할 수 있는 규칙 엔진과 계정과목·적요·전표 구조를 활용한 Tx 코드 추천 및 검증 기능을 제공합니다.
 선택적으로 Google Cloud Vertex AI를 연결하면 업로드한 시트의 모든 행을 AI가 종합 검토할 수 있습니다.
 
-배포 주소: https://entrychecker.onrender.com/
+배포 주소: [https://entrychecker-v2.onrender.com/](https://entrychecker-v2.onrender.com/)
 
 ## 2. 주요 기능
 
@@ -62,13 +62,16 @@
 3. 좌측에서 분석 조건과 `AND` / `OR` 그룹을 구성합니다.
 4. `규칙 기반 분석`을 실행합니다.
 5. 강조된 분개와 Tx 불일치를 검토하고 검토상태를 기록합니다.
-6. 필요한 경우 AI 분석 요청을 입력하고 데이터 전송 안내에 동의한 뒤 `AI 전체 분석`을 실행합니다.
+6. 열 제목을 클릭해 정렬하고, 제목을 드래그해 순서를 바꾸거나 오른쪽 경계선을 드래그해 너비를 조절합니다.
+7. 필요한 경우 AI 분석 요청을 입력하고 데이터 전송 안내에 동의한 뒤 `AI 분석 실행`을 누릅니다. 분석 결과는 좌측 하단 로그에 표시됩니다.
 
 샘플 파일은 `sample/분개장.xlsx`, `sample/분개장(오류).csv`에 있습니다.
 
 ## 4. 로컬 실행
 
 ```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m backend.app
 ```
 
@@ -96,7 +99,7 @@ GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"your-projec
 - AI 응답은 실행당 최대 `8192` 출력 토큰으로 제한되며, 완료 로그에 입력·출력·총 토큰 수가 표시됩니다.
 - 요청은 Vertex AI Flex PayGo 전용 헤더를 사용합니다. Gemini 3.1 Flash-Lite의 `global` 엔드포인트에서 처리되며, 완료 로그의 트래픽 유형이 `ON_DEMAND_FLEX`인지 확인할 수 있습니다.
 
-Render에서는 서비스 계정 JSON을 저장소에 커밋하지 말고 Secret File로 등록한 뒤, 그 파일 경로를 `GOOGLE_APPLICATION_CREDENTIALS`에 설정합니다.
+Render에서는 서비스 계정 JSON을 저장소에 커밋하지 말고 Secret File로 등록한 뒤, 그 파일 경로를 `GOOGLE_APPLICATION_CREDENTIALS`에 설정합니다. `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `VERTEX_MODEL`도 Render 환경변수로 등록합니다.
 
 ## 5. 테스트
 

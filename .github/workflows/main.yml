@@ -8,4 +8,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Send request to keep app awake
-        run: curl -s https://entrychecker.onrender.com/ > /dev/null
+        run: curl --fail --silent --show-error https://entrychecker-v2.onrender.com/ > /dev/null

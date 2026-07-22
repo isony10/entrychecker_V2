@@ -21,8 +21,8 @@
     #loading { left: 0; right: 0; width: max-content; margin-inline: auto; transform: none; }
     .data-table { table-layout: fixed; }
     .data-table thead th { position: sticky; top: 0; z-index: 5; user-select: none; }
-    .column-drag-handle { cursor: grab; }
-    .column-drag-handle:active { cursor: grabbing; }
+    .column-sort-button { cursor: grab; }
+    .column-sort-button:active { cursor: grabbing; }
     .column-resizer { position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; z-index: 10; }
     .column-resizer::after { content: ''; position: absolute; top: 20%; bottom: 20%; left: 4px; width: 1px; background: #cbd5e1; }
     .column-resizer:hover::after, body.column-resizing .column-resizer::after { width: 2px; background: #2563eb; }
@@ -150,7 +150,7 @@
     <section class="min-w-0 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col xl:min-h-[calc(100vh-122px)]">
       <div class="px-5 py-3 border-b border-slate-200 flex items-center justify-between gap-4">
         <h2 class="font-bold text-slate-900 whitespace-nowrap"><i class="fas fa-table-list text-blue-600 mr-2"></i>분개장 분석 결과</h2>
-        <span class="text-xs text-slate-500 text-right">제목 클릭 정렬 · <i class="fas fa-grip-vertical mx-1"></i> 드래그 이동 · 경계선 드래그 너비 조절</span>
+        <span class="text-xs text-slate-500 text-right">제목 클릭 정렬 · 제목 드래그 이동 · 경계선 드래그 너비 조절</span>
       </div>
       <div id="display-area" class="p-4 flex-1 min-h-[640px] overflow-auto">
         <div id="tax-summary" class="hidden mb-4"></div>

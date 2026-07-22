@@ -14,6 +14,7 @@ let tableColumnOrder = [];
 let tableColumnWidths = {};
 let tableSort = { column: null, direction: null };
 let currentTableView = null;
+let suppressTableSortClick = false;
 
 const $file = document.getElementById('file-upload');
 const $fileName = document.getElementById('file-name');
@@ -327,8 +328,8 @@ function getHeaderLabel(header) {
 function defaultColumnWidth(header) {
   const label = getHeaderLabel(header);
   const widths = {
-    '전표일자': 112, '전표번호': 92, '계정코드': 92, '계정과목': 150,
-    '차변금액': 118, '대변금액': 118, '거래처코드': 108, 'Tx코드': 92,
+    '전표일자': 112, '전표번호': 96, '계정코드': 96, '계정과목': 150,
+    '차변금액': 118, '대변금액': 118, '거래처코드': 112, 'Tx코드': 92,
     'Tx추천코드': 120, 'Tx분류': 138, 'Tx근거': 280, 'Tx검증': 100,
     '검토상태': 112, '승인일자': 112
   };
@@ -412,20 +413,26 @@ function enableColumnResizing(tbl, headers) {
 function enableColumnDragging(tbl, headers) {
   const headerCells = Array.from(tbl.querySelectorAll('thead th'));
   headerCells.forEach((th, sourceIndex) => {
-    const handle = th.querySelector('.column-drag-handle');
-    if (!handle) return;
-    handle.addEventListener('pointerdown', event => {
-      event.preventDefault();
-      event.stopPropagation();
+    th.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || event.target.closest('.column-resizer')) return;
+      const startX = event.clientX;
+      const startY = event.clientY;
       let targetIndex = sourceIndex;
       let placeAfter = false;
-      document.body.classList.add('column-dragging');
-      th.classList.add('column-being-dragged');
+      let dragging = false;
 
       const clearDropIndicators = () => {
         headerCells.forEach(cell => cell.classList.remove('column-drop-before', 'column-drop-after'));
       };
       const onMove = moveEvent => {
+        if (!dragging) {
+          const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+          if (distance < 6) return;
+          dragging = true;
+          document.body.classList.add('column-dragging');
+          th.classList.add('column-being-dragged');
+        }
+        moveEvent.preventDefault();
         const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('th');
         const index = headerCells.indexOf(target);
         if (index < 0) return;
@@ -440,13 +447,17 @@ function enableColumnDragging(tbl, headers) {
         clearDropIndicators();
         target.classList.add(placeAfter ? 'column-drop-after' : 'column-drop-before');
       };
-      const onUp = () => {
+      const finish = shouldMove => {
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
-        document.removeEventListener('pointercancel', onUp);
+        document.removeEventListener('pointercancel', onCancel);
         document.body.classList.remove('column-dragging');
         th.classList.remove('column-being-dragged');
         clearDropIndicators();
+        if (!dragging || !shouldMove) return;
+
+        suppressTableSortClick = true;
+        setTimeout(() => { suppressTableSortClick = false; }, 0);
         if (targetIndex === sourceIndex) return;
 
         const nextOrder = [...headers];
@@ -458,9 +469,11 @@ function enableColumnDragging(tbl, headers) {
         tableColumnOrder = nextOrder;
         renderCurrentTable();
       };
+      const onUp = () => finish(true);
+      const onCancel = () => finish(false);
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
-      document.addEventListener('pointercancel', onUp);
+      document.addEventListener('pointercancel', onCancel);
     });
   });
 }
@@ -504,8 +517,7 @@ function renderCurrentTable() {
       : 'none';
     return `<th class="relative border-b font-semibold whitespace-nowrap bg-gray-100" data-column="${encodeURIComponent(header)}" aria-sort="${ariaSort}">
       <div class="flex items-center min-w-0 pr-1">
-        <span class="column-drag-handle px-2 py-2 text-slate-400 hover:text-slate-700" title="드래그하여 열 이동"><i class="fas fa-grip-vertical"></i></span>
-        <button type="button" class="column-sort-button min-w-0 flex-1 flex items-center justify-between gap-2 py-2 pr-2 text-left" title="${escapeHtml(label)} 정렬">
+        <button type="button" class="column-sort-button min-w-0 flex-1 flex items-center justify-between gap-2 py-2 pl-2 pr-2 text-left" title="클릭하여 ${escapeHtml(label)} 정렬 · 드래그하여 열 이동">
           <span class="overflow-hidden text-ellipsis">${escapeHtml(label)}</span><span class="sort-indicator text-[10px]">${sortIndicator}</span>
         </button>
         <span class="column-resizer" title="드래그하여 열 너비 조절"></span>
@@ -555,6 +567,10 @@ function renderCurrentTable() {
 
   tbl.querySelectorAll('.column-sort-button').forEach(button => {
     button.addEventListener('click', () => {
+      if (suppressTableSortClick) {
+        suppressTableSortClick = false;
+        return;
+      }
       const header = decodeURIComponent(button.closest('th').dataset.column);
       tableSort = {
         column: header,
