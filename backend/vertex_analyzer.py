@@ -2,13 +2,26 @@ import json
 import logging
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
+from dotenv import load_dotenv
 
 
 logger = logging.getLogger(__name__)
 MAX_OUTPUT_TOKENS = 8192
 SERVICE_TIER = "flex"
+FLEX_TIMEOUT_MS = 600000
+FLEX_HEADERS = {
+    "X-Vertex-AI-LLM-Request-Type": "shared",
+    "X-Vertex-AI-LLM-Shared-Request-Type": "flex",
+}
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+SERVICE_ACCOUNT_ENV = "GOOGLE_SERVICE_ACCOUNT_JSON"
+
+# `python -m backend.app`, Flask/Gunicorn 등 어떤 방식으로 실행해도
+# 저장소 루트의 로컬 전용 .env를 동일하게 읽는다.
+load_dotenv(ENV_PATH)
 
 
 class VertexConfigurationError(RuntimeError):
@@ -118,11 +131,55 @@ def _positive_int_env(name, default):
     return value
 
 
+def _load_service_account_info():
+    raw = os.getenv(SERVICE_ACCOUNT_ENV, "").strip()
+    if not raw:
+        return None
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise VertexConfigurationError(
+            f"{SERVICE_ACCOUNT_ENV} 값이 올바른 JSON이 아닙니다."
+        ) from exc
+    if not isinstance(info, dict):
+        raise VertexConfigurationError(
+            f"{SERVICE_ACCOUNT_ENV} 값은 JSON 객체여야 합니다."
+        )
+
+    required = ("project_id", "private_key", "client_email", "token_uri")
+    missing = [name for name in required if not str(info.get(name, "")).strip()]
+    if missing:
+        raise VertexConfigurationError(
+            f"{SERVICE_ACCOUNT_ENV}에 필수 항목이 없습니다: {', '.join(missing)}"
+        )
+    return info
+
+
+def _load_vertex_credentials():
+    info = _load_service_account_info()
+    if info is None:
+        return None
+    try:
+        from google.oauth2 import service_account
+
+        return service_account.Credentials.from_service_account_info(
+            info,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+    except (ValueError, TypeError) as exc:
+        raise VertexConfigurationError(
+            f"{SERVICE_ACCOUNT_ENV}의 서비스 계정 키를 읽지 못했습니다."
+        ) from exc
+
+
 def load_vertex_config():
+    service_account_info = _load_service_account_info()
     project = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
+    if not project and service_account_info:
+        project = str(service_account_info.get("project_id", "")).strip()
     if not project:
         raise VertexConfigurationError(
-            "GOOGLE_CLOUD_PROJECT 환경변수가 설정되지 않았습니다."
+            "GOOGLE_CLOUD_PROJECT 또는 GOOGLE_SERVICE_ACCOUNT_JSON의 project_id가 필요합니다."
         )
     return VertexConfig(
         project=project,
@@ -224,15 +281,20 @@ def _response_to_dict(response):
 
 def _token_usage(response):
     usage = getattr(response, "usage_metadata", None)
+    traffic_type = getattr(usage, "traffic_type", "") or ""
+    if hasattr(traffic_type, "value"):
+        traffic_type = traffic_type.value
     return {
         "prompt_tokens": int(getattr(usage, "prompt_token_count", 0) or 0),
         "output_tokens": int(getattr(usage, "candidates_token_count", 0) or 0),
         "total_tokens": int(getattr(usage, "total_token_count", 0) or 0),
+        "traffic_type": str(traffic_type),
     }
 
 
 def analyze_sheet_with_vertex(df, filename, user_instruction=""):
     config = load_vertex_config()
+    credentials = _load_vertex_credentials()
     payload, serialized = prepare_sheet_payload(
         df,
         filename,
@@ -260,7 +322,12 @@ def analyze_sheet_with_vertex(df, filename, user_instruction=""):
             vertexai=True,
             project=config.project,
             location=config.location,
-            http_options=types.HttpOptions(api_version="v1"),
+            credentials=credentials,
+            http_options=types.HttpOptions(
+                api_version="v1",
+                headers=FLEX_HEADERS,
+                timeout=FLEX_TIMEOUT_MS,
+            ),
         ) as client:
             response = client.models.generate_content(
                 model=config.model,
@@ -269,7 +336,6 @@ def analyze_sheet_with_vertex(df, filename, user_instruction=""):
                     system_instruction=SYSTEM_INSTRUCTION,
                     temperature=0.1,
                     max_output_tokens=MAX_OUTPUT_TOKENS,
-                    service_tier=types.ServiceTier.FLEX,
                     response_mime_type="application/json",
                     response_json_schema=REPORT_SCHEMA,
                 ),

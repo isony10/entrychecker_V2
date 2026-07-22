@@ -18,7 +18,6 @@ const $runAiAnalysis = document.getElementById('run-ai-analysis');
 const $aiInstruction = document.getElementById('ai-instruction');
 const $aiInstructionError = document.getElementById('ai-instruction-error');
 const $aiDataConsent = document.getElementById('ai-data-consent');
-const $aiReport = document.getElementById('ai-report');
 const $logicTree = document.getElementById('logic-tree');
 const $log = document.getElementById('log-content');
 const $taxSummary = document.getElementById('tax-summary');
@@ -131,55 +130,54 @@ function escapeHtml(value) {
 function renderAiReport(report) {
   const meta = report.analysis_metadata || {};
   const risk = report.overall_risk || '중간';
-  const riskStyle = risk === '높음'
-    ? 'bg-red-100 text-red-800 border-red-200'
-    : risk === '낮음'
-      ? 'bg-green-100 text-green-800 border-green-200'
-      : 'bg-amber-100 text-amber-800 border-amber-200';
+  const riskStyle = risk === '높음' ? 'text-red-300 border-red-400/40 bg-red-500/10'
+    : risk === '낮음' ? 'text-emerald-300 border-emerald-400/40 bg-emerald-500/10'
+      : 'text-amber-300 border-amber-400/40 bg-amber-500/10';
   const findings = Array.isArray(report.findings) ? report.findings : [];
   const metrics = Array.isArray(report.key_metrics) ? report.key_metrics : [];
   const listSection = (title, items) => {
     if (!Array.isArray(items) || !items.length) return '';
-    return `<div><h5 class="font-bold text-sm mb-1">${escapeHtml(title)}</h5><ul class="list-disc pl-5 text-sm text-gray-700 space-y-1">${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>`;
+    return `<div class="border-t border-slate-700 pt-3"><h5 class="font-bold text-sm text-violet-200 mb-1">${escapeHtml(title)}</h5><ul class="list-disc pl-5 text-sm text-slate-300 space-y-1">${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>`;
   };
 
-  $aiReport.classList.remove('hidden');
-  $aiReport.innerHTML = `
-    <div class="border border-violet-200 rounded-lg overflow-hidden bg-white">
-      <div class="px-4 py-3 bg-violet-50 border-b border-violet-200 flex items-center gap-3">
-        <h4 class="font-bold text-violet-900"><i class="fas fa-wand-magic-sparkles mr-2"></i>AI 전체 시트 분석</h4>
+  const article = document.createElement('article');
+  article.className = 'my-3 border border-violet-400/40 rounded-xl overflow-hidden bg-slate-900 font-sans shadow-lg';
+  article.innerHTML = `
+      <div class="px-4 py-3 bg-violet-500/10 border-b border-violet-400/30 flex flex-wrap items-center gap-3">
+        <h4 class="font-bold text-violet-200"><i class="fas fa-wand-magic-sparkles mr-2"></i>AI 전체 시트 분석 결과</h4>
         <span class="px-2 py-1 rounded-full border text-xs font-bold ${riskStyle}">종합 위험도 ${escapeHtml(risk)}</span>
-        <span class="ml-auto text-xs text-gray-500">${formatWon(meta.analyzed_rows)}행 · ${escapeHtml(meta.model || '')}</span>
+        <span class="ml-auto text-xs text-slate-400">${formatWon(meta.analyzed_rows)}행 · ${escapeHtml(meta.model || '')}</span>
       </div>
       <div class="p-4 space-y-4">
-        <p class="text-sm leading-6 text-gray-800">${escapeHtml(report.executive_summary || '')}</p>
+        <p class="text-sm leading-6 text-slate-200">${escapeHtml(report.executive_summary || '')}</p>
         ${metrics.length ? `<div class="grid grid-cols-1 md:grid-cols-3 gap-2">${metrics.map(metric => `
-          <div class="border rounded p-3 bg-gray-50">
-            <div class="text-xs text-gray-500">${escapeHtml(metric.name)}</div>
-            <div class="font-bold text-gray-900 mt-1">${escapeHtml(metric.value)}</div>
-            <div class="text-xs text-gray-600 mt-1">${escapeHtml(metric.interpretation)}</div>
+          <div class="border border-slate-700 rounded-lg p-3 bg-slate-800">
+            <div class="text-xs text-slate-400">${escapeHtml(metric.name)}</div>
+            <div class="font-bold text-white mt-1">${escapeHtml(metric.value)}</div>
+            <div class="text-xs text-slate-300 mt-1">${escapeHtml(metric.interpretation)}</div>
           </div>`).join('')}</div>` : ''}
         <div>
-          <h5 class="font-bold text-sm mb-2">주요 발견사항 (${formatWon(findings.length)}건)</h5>
+          <h5 class="font-bold text-sm text-violet-200 mb-2">주요 발견사항 (${formatWon(findings.length)}건)</h5>
           <div class="space-y-2">${findings.length ? findings.map(finding => {
             const severity = finding.severity || '중간';
-            const severityStyle = severity === '높음' ? 'text-red-700 bg-red-50' : severity === '낮음' ? 'text-green-700 bg-green-50' : 'text-amber-700 bg-amber-50';
+            const severityStyle = severity === '높음' ? 'text-red-300 bg-red-500/10' : severity === '낮음' ? 'text-emerald-300 bg-emerald-500/10' : 'text-amber-300 bg-amber-500/10';
             const rows = Array.isArray(finding.row_numbers) ? finding.row_numbers : [];
-            return `<div class="border rounded-lg p-3">
-              <div class="flex items-center gap-2"><span class="text-xs font-bold px-2 py-1 rounded ${severityStyle}">${escapeHtml(severity)}</span><strong class="text-sm">${escapeHtml(finding.title)}</strong></div>
-              <p class="text-sm text-gray-700 mt-2">${escapeHtml(finding.description)}</p>
-              <p class="text-xs text-gray-500 mt-2"><strong>근거 행:</strong> ${rows.length ? rows.map(escapeHtml).join(', ') : '특정 행 없음'}</p>
-              <p class="text-xs text-gray-600 mt-1"><strong>근거:</strong> ${escapeHtml(finding.evidence)}</p>
-              <p class="text-xs text-violet-800 mt-1"><strong>권고 절차:</strong> ${escapeHtml(finding.recommendation)}</p>
+            return `<div class="border border-slate-700 rounded-lg p-3 bg-slate-800/70">
+              <div class="flex items-center gap-2"><span class="text-xs font-bold px-2 py-1 rounded ${severityStyle}">${escapeHtml(severity)}</span><strong class="text-sm text-white">${escapeHtml(finding.title)}</strong></div>
+              <p class="text-sm text-slate-300 mt-2">${escapeHtml(finding.description)}</p>
+              <p class="text-xs text-slate-400 mt-2"><strong>근거 행:</strong> ${rows.length ? rows.map(escapeHtml).join(', ') : '특정 행 없음'}</p>
+              <p class="text-xs text-slate-300 mt-1"><strong>근거:</strong> ${escapeHtml(finding.evidence)}</p>
+              <p class="text-xs text-violet-300 mt-1"><strong>권고 절차:</strong> ${escapeHtml(finding.recommendation)}</p>
             </div>`;
-          }).join('') : '<p class="text-sm text-gray-500">보고된 주요 발견사항이 없습니다.</p>'}</div>
+          }).join('') : '<p class="text-sm text-slate-400">보고된 주요 발견사항이 없습니다.</p>'}</div>
         </div>
         ${listSection('전체 패턴', report.patterns)}
         ${listSection('Tx·부가세 검토사항', report.tax_review)}
         ${listSection('분석 한계', report.limitations)}
-        <p class="text-xs text-gray-500 border-t pt-3">AI 결과는 감사·세무 결론이 아니며, 원본 증빙과 거래 사실을 확인해야 합니다.</p>
+        <p class="text-xs text-slate-500 border-t border-slate-700 pt-3">AI 결과는 감사·세무 결론이 아니며, 원본 증빙과 거래 사실을 확인해야 합니다.</p>
       </div>
-    </div>`;
+  `;
+  $log.prepend(article);
 }
 
 async function responseError(res) {
@@ -213,10 +211,11 @@ async function runAiSheetAnalysis() {
     renderAiReport(report);
     const meta = report.analysis_metadata || {};
     const usage = meta.token_usage || {};
+    const traffic = usage.traffic_type || meta.service_tier || 'unknown';
     logMsg(
       `AI 전체 분석 완료 – ${formatWon(meta.analyzed_rows)}행 검토 · ` +
       `토큰 입력 ${formatWon(usage.prompt_tokens)} / 출력 ${formatWon(usage.output_tokens)} / ` +
-      `총 ${formatWon(usage.total_tokens)} (출력 상한 ${formatWon(meta.max_output_tokens)}토큰 · ${meta.service_tier || 'standard'} 모드)`,
+      `총 ${formatWon(usage.total_tokens)} (출력 상한 ${formatWon(meta.max_output_tokens)}토큰 · ${traffic})`,
       'success'
     );
   } catch (e) {
@@ -389,8 +388,6 @@ document.addEventListener('DOMContentLoaded', () => {
     $file.onchange = async e => {
         const f = e.target.files[0];
         if (!f) return;
-        $aiReport.classList.add('hidden');
-        $aiReport.innerHTML = '';
         $fileName.textContent = f.name;
         logMsg(`파일 선택: ${f.name}`, 'info');
         const fd = new FormData();

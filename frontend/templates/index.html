@@ -48,96 +48,99 @@
     </div>
   </header>
 
-  <main class="max-w-[1600px] mx-auto w-full p-4 lg:p-6 space-y-4">
-    <section class="grid xl:grid-cols-[0.9fr_1.1fr] gap-4 items-start" aria-label="분석 실행 설정">
-      <article class="bg-white rounded-2xl shadow-sm border border-violet-200 overflow-hidden">
-        <div class="p-5 border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white">
-          <div class="flex items-start justify-between gap-3">
+  <main class="max-w-[1900px] mx-auto w-full p-4 lg:p-5 grid xl:grid-cols-[minmax(560px,0.95fr)_minmax(0,1.15fr)] gap-4 xl:min-h-[calc(100vh-82px)]">
+    <aside class="min-w-0 flex flex-col gap-4">
+      <section class="grid 2xl:grid-cols-2 gap-4 items-start" aria-label="분석 실행 설정">
+        <article class="bg-white rounded-2xl shadow-sm border border-violet-200 overflow-hidden">
+          <div class="p-4 border-b border-violet-100 bg-gradient-to-r from-violet-50 to-white">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex gap-3">
+                <span class="w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">AI</span>
+                <div>
+                  <h2 class="font-bold text-base text-violet-950">Vertex AI 전체 분석</h2>
+                  <p class="text-xs text-slate-600 mt-1">전체 시트의 이상 패턴과 감사절차를 종합합니다.</p>
+                </div>
+              </div>
+              <span class="shrink-0 text-[10px] font-bold px-2 py-1 rounded-full bg-violet-100 text-violet-700">Flex · 8,192</span>
+            </div>
+          </div>
+          <div class="p-4 space-y-3">
+            <div>
+              <label for="ai-instruction" class="block text-xs font-bold text-slate-800 mb-2">AI에게 요청할 분석 내용 <span class="text-red-500">*</span></label>
+              <textarea id="ai-instruction" rows="4" maxlength="2000" class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-500 transition" placeholder="예) 결산일 전후 수동전표와 Tx코드 불일치를 우선 검토해줘."></textarea>
+              <p id="ai-instruction-error" class="hidden text-xs text-red-600 mt-1.5"><i class="fas fa-circle-exclamation mr-1"></i>AI에게 요청할 분석 내용을 입력해주세요.</p>
+            </div>
+            <label class="flex items-start gap-2 text-[11px] text-slate-600 leading-5 bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <input type="checkbox" id="ai-data-consent" class="mt-1 accent-violet-600">
+              <span>재무 데이터가 Vertex AI로 전송되며 사용량에 따른 비용이 발생할 수 있음을 확인했습니다.</span>
+            </label>
+            <div class="flex items-center gap-3 justify-between">
+              <p class="text-[11px] text-amber-700"><i class="fas fa-clock mr-1"></i>Flex 모드는 대기시간이 길 수 있습니다.</p>
+              <button id="run-ai-analysis" class="bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold py-2.5 px-4 rounded-xl flex items-center justify-center whitespace-nowrap transition-colors shadow-sm" title="업로드한 시트 전체를 Vertex AI로 검토합니다.">
+                <i class="fas fa-wand-magic-sparkles mr-2"></i>AI 분석 실행
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <article class="bg-white rounded-2xl shadow-sm border border-lime-200 overflow-hidden">
+          <div class="p-4 border-b border-lime-100 bg-gradient-to-r from-lime-50 to-white">
             <div class="flex gap-3">
-              <span class="w-8 h-8 rounded-full bg-violet-600 text-white flex items-center justify-center font-bold text-sm">AI</span>
+              <span class="w-8 h-8 rounded-full bg-lime-600 text-white flex items-center justify-center font-bold text-sm"><i class="fas fa-list-check"></i></span>
               <div>
-                <h2 class="font-bold text-lg text-violet-950">Vertex AI 전체 분석</h2>
-                <p class="text-sm text-slate-600 mt-1">모든 행을 보내 이상 패턴, 근거 행과 권고 감사절차를 종합합니다.</p>
+                <h2 class="font-bold text-base text-lime-950">규칙 기반 분석</h2>
+                <p class="text-xs text-slate-600 mt-1">조건을 조합해 이상거래 판정 논리를 구성합니다.</p>
               </div>
             </div>
-            <span class="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full bg-violet-100 text-violet-700">Flex · 8,192</span>
           </div>
-        </div>
-        <div class="p-5 space-y-4">
-          <div>
-            <label for="ai-instruction" class="block text-sm font-bold text-slate-800 mb-2">AI에게 요청할 분석 내용 <span class="text-red-500">*</span></label>
-            <textarea id="ai-instruction" rows="5" maxlength="2000" class="w-full border border-slate-300 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-500 transition" placeholder="예) 결산일 전후 수동전표와 Tx코드 불일치를 우선 검토하고, 추가 감사절차를 제안해줘."></textarea>
-            <p id="ai-instruction-error" class="hidden text-xs text-red-600 mt-1.5"><i class="fas fa-circle-exclamation mr-1"></i>AI에게 요청할 분석 내용을 입력해주세요.</p>
-          </div>
-          <label class="flex items-start gap-2.5 text-xs text-slate-600 leading-5 bg-slate-50 border border-slate-200 rounded-xl p-3">
-            <input type="checkbox" id="ai-data-consent" class="mt-1 accent-violet-600">
-            <span>업로드한 재무 데이터 전체가 Google Cloud Vertex AI로 전송되며 사용량에 따른 비용이 발생할 수 있음을 확인했습니다.</span>
-          </label>
-          <div class="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
-            <p class="text-xs text-amber-700"><i class="fas fa-clock mr-1"></i>저비용 Flex 모드라 처리 대기시간이 길어질 수 있습니다.</p>
-            <button id="run-ai-analysis" class="bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 px-5 rounded-xl flex items-center justify-center whitespace-nowrap transition-colors shadow-sm" title="업로드한 시트 전체를 Vertex AI로 검토합니다.">
-              <i class="fas fa-wand-magic-sparkles mr-2"></i> AI 전체 분석 실행
-            </button>
-          </div>
-          <p class="text-xs text-slate-500"><i class="fas fa-shield-halved mr-1"></i>AI 결과는 검토 보조자료이며 감사·세무 결론이 아닙니다.</p>
-        </div>
-      </article>
-
-      <article class="bg-white rounded-2xl shadow-sm border border-lime-200 overflow-hidden">
-        <div class="p-5 border-b border-lime-100 bg-gradient-to-r from-lime-50 to-white">
-          <div class="flex gap-3">
-            <span class="w-8 h-8 rounded-full bg-lime-600 text-white flex items-center justify-center font-bold text-sm"><i class="fas fa-list-check"></i></span>
-            <div>
-              <h2 class="font-bold text-lg text-lime-950">규칙 기반 분석</h2>
-              <p class="text-sm text-slate-600 mt-1">조건과 그룹을 추가하고 드래그해 이상거래 판정 논리를 구성합니다.</p>
+          <div class="p-4 space-y-3">
+            <div class="flex flex-wrap gap-x-4 gap-y-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+              <label class="inline-flex items-center text-xs font-medium"><input type="checkbox" id="chk-whole-voucher" class="mr-2 accent-lime-600">전표세트 전체 강조</label>
+              <label class="inline-flex items-center text-xs font-medium"><input type="checkbox" id="chk-show-matching-only" class="mr-2 accent-lime-600">일치 분개만 보기</label>
+            </div>
+            <div id="rule-list" class="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-3 max-h-56 overflow-y-auto">
+              <div class="grid sm:grid-cols-[1fr_auto_auto] gap-2">
+                <select id="condition-select" class="border border-slate-300 px-2 py-2 rounded-lg w-full bg-white text-xs">
+                  <option value="weekend_txn">주말·공휴일 거래</option>
+                  <option value="amount_over">금액 조건</option>
+                  <option value="keyword_search">특정 키워드</option>
+                  <option value="party_freq">거래처별 거래 횟수</option>
+                  <option value="round_million">백만단위 이하 0</option>
+                  <option value="uniform_account">동일 계정 전표세트</option>
+                  <option value="unbalanced_set">차/대변 불일치 세트</option>
+                  <option value="tax_mismatch">Tx코드 검증 불일치</option>
+                </select>
+                <button id="add-condition-btn" class="border border-slate-300 px-3 py-2 rounded-lg bg-white hover:bg-slate-100 text-xs font-medium">조건 추가</button>
+                <button id="add-group-btn" class="border border-slate-300 px-3 py-2 rounded-lg bg-white hover:bg-slate-100 text-xs font-medium">그룹 추가</button>
+              </div>
+              <div id="logic-tree" class="space-y-2"></div>
+            </div>
+            <div class="flex justify-end">
+              <button id="run-analysis" class="bg-lime-600 hover:bg-lime-700 text-white text-sm font-bold py-2.5 px-4 rounded-xl flex items-center justify-center transition-colors shadow-sm" title="설정한 규칙에 따라 개별 분개를 검토합니다.">
+                <i class="fas fa-list-check mr-2"></i>규칙 분석 실행
+              </button>
             </div>
           </div>
-        </div>
-        <div class="p-5 space-y-4">
-          <div class="flex flex-wrap gap-x-5 gap-y-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
-            <label class="inline-flex items-center text-sm font-medium"><input type="checkbox" id="chk-whole-voucher" class="mr-2 accent-lime-600">전표세트 전체 강조</label>
-            <label class="inline-flex items-center text-sm font-medium"><input type="checkbox" id="chk-show-matching-only" class="mr-2 accent-lime-600">일치하는 분개만 보기</label>
-          </div>
-          <div id="rule-list" class="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-3 max-h-72 overflow-y-auto">
-            <div class="grid sm:grid-cols-[1fr_auto_auto] gap-2">
-              <select id="condition-select" class="border border-slate-300 px-2 py-2 rounded-lg w-full bg-white text-sm">
-                <option value="weekend_txn">주말·공휴일 거래</option>
-                <option value="amount_over">금액 조건</option>
-                <option value="keyword_search">특정 키워드</option>
-                <option value="party_freq">거래처별 거래 횟수</option>
-                <option value="round_million">백만단위 이하 0</option>
-                <option value="uniform_account">동일 계정 전표세트</option>
-                <option value="unbalanced_set">차/대변 불일치 세트</option>
-                <option value="tax_mismatch">Tx코드 검증 불일치</option>
-              </select>
-              <button id="add-condition-btn" class="border border-slate-300 px-3 py-2 rounded-lg bg-white hover:bg-slate-100 text-sm font-medium">조건 추가</button>
-              <button id="add-group-btn" class="border border-slate-300 px-3 py-2 rounded-lg bg-white hover:bg-slate-100 text-sm font-medium">그룹 추가</button>
-            </div>
-            <div id="logic-tree" class="space-y-2"></div>
-          </div>
-          <div class="flex justify-end">
-            <button id="run-analysis" class="bg-lime-600 hover:bg-lime-700 text-white font-bold py-2.5 px-5 rounded-xl flex items-center justify-center transition-colors shadow-sm" title="설정한 규칙에 따라 개별 분개를 검토합니다.">
-              <i class="fas fa-list-check mr-2"></i> 규칙 기반 분석 실행
-            </button>
-          </div>
-        </div>
-      </article>
-    </section>
+        </article>
+      </section>
 
-    <section class="bg-slate-900 text-white text-sm font-mono p-4 rounded-2xl shadow-sm h-36 overflow-auto" aria-label="분석 로그">
-      <p class="text-emerald-400 font-bold mb-1">&gt; 분석 로그</p>
-      <div id="log-content" aria-live="polite"></div>
-    </section>
+      <section id="analysis-log-panel" class="bg-slate-950 text-slate-100 rounded-2xl shadow-sm min-h-[420px] xl:flex-1 overflow-hidden flex flex-col" aria-label="분석 로그와 AI 분석 결과">
+        <div class="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+          <p class="text-emerald-400 font-bold text-sm font-mono">&gt; 분석 로그 · AI 분석 결과</p>
+          <span class="text-[11px] text-slate-500">최신 내용이 위에 표시됩니다.</span>
+        </div>
+        <div id="log-content" class="p-4 overflow-auto flex-1 text-sm font-mono space-y-1" aria-live="polite"></div>
+      </section>
+    </aside>
 
-    <section class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-      <div class="px-5 py-3 border-b border-slate-200 flex items-center justify-between">
-        <h2 class="font-bold text-slate-900"><i class="fas fa-chart-column text-blue-600 mr-2"></i>분석 결과</h2>
-        <span class="text-xs text-slate-500">AI 보고서와 Tx 검증 결과를 한곳에서 확인합니다.</span>
+    <section class="min-w-0 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col xl:min-h-[calc(100vh-122px)]">
+      <div class="px-5 py-3 border-b border-slate-200 flex items-center justify-between gap-4">
+        <h2 class="font-bold text-slate-900 whitespace-nowrap"><i class="fas fa-table-list text-blue-600 mr-2"></i>분개장 분석 결과</h2>
+        <span class="text-xs text-slate-500 text-right">Tx 추천과 검증 결과를 원본 행과 함께 확인합니다.</span>
       </div>
-      <div id="display-area" class="p-4 min-h-[520px] overflow-auto">
-        <div id="ai-report" class="hidden mb-4"></div>
+      <div id="display-area" class="p-4 flex-1 min-h-[640px] overflow-auto">
         <div id="tax-summary" class="hidden mb-4"></div>
-        <div id="table-container" class="w-full min-h-[460px] flex items-center justify-center text-slate-400 overflow-x-auto"><p>분개장 파일을 불러온 뒤 원하는 분석을 실행해주세요.</p></div>
+        <div id="table-container" class="w-full min-h-[560px] flex items-center justify-center text-slate-400 overflow-x-auto"><p>분개장 파일을 불러온 뒤 원하는 분석을 실행해주세요.</p></div>
       </div>
     </section>
   </main>

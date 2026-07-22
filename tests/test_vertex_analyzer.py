@@ -12,9 +12,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.app import app
 from backend.vertex_analyzer import (
+    FLEX_HEADERS,
     MAX_OUTPUT_TOKENS,
     SERVICE_TIER,
     SheetTooLargeError,
+    VertexConfigurationError,
+    _load_service_account_info,
     _token_usage,
     load_vertex_config,
     prepare_sheet_payload,
@@ -29,8 +32,39 @@ class VertexPayloadTests(unittest.TestCase):
     def test_output_token_limit_is_8192(self):
         self.assertEqual(MAX_OUTPUT_TOKENS, 8192)
 
-    def test_service_tier_is_flex(self):
+    def test_service_tier_is_flex_paygo(self):
         self.assertEqual(SERVICE_TIER, "flex")
+        self.assertEqual(FLEX_HEADERS["X-Vertex-AI-LLM-Request-Type"], "shared")
+        self.assertEqual(
+            FLEX_HEADERS["X-Vertex-AI-LLM-Shared-Request-Type"],
+            "flex",
+        )
+
+    def test_project_can_come_from_service_account_json(self):
+        credentials_json = json.dumps(
+            {
+                "project_id": "json-project",
+                "private_key": "test-key",
+                "client_email": "test@example.com",
+                "token_uri": "https://oauth2.googleapis.com/token",
+            }
+        )
+        with patch.dict(
+            "os.environ",
+            {"GOOGLE_SERVICE_ACCOUNT_JSON": credentials_json},
+            clear=True,
+        ):
+            self.assertEqual(load_vertex_config().project, "json-project")
+            self.assertEqual(_load_service_account_info()["client_email"], "test@example.com")
+
+    def test_invalid_service_account_json_has_clear_error(self):
+        with patch.dict(
+            "os.environ",
+            {"GOOGLE_SERVICE_ACCOUNT_JSON": "not-json"},
+            clear=True,
+        ):
+            with self.assertRaisesRegex(VertexConfigurationError, "올바른 JSON"):
+                load_vertex_config()
 
     def test_token_usage_is_extracted_from_vertex_response(self):
         response = SimpleNamespace(
@@ -38,12 +72,18 @@ class VertexPayloadTests(unittest.TestCase):
                 prompt_token_count=120,
                 candidates_token_count=80,
                 total_token_count=200,
+                traffic_type=SimpleNamespace(value="ON_DEMAND_FLEX"),
             )
         )
 
         self.assertEqual(
             _token_usage(response),
-            {"prompt_tokens": 120, "output_tokens": 80, "total_tokens": 200},
+            {
+                "prompt_tokens": 120,
+                "output_tokens": 80,
+                "total_tokens": 200,
+                "traffic_type": "ON_DEMAND_FLEX",
+            },
         )
 
     def test_payload_contains_every_row_and_sheet_row_numbers(self):
