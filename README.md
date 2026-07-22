@@ -7,6 +7,8 @@
 감사인이 직접 검토 조건을 구성할 수 있는 규칙 엔진과 계정과목·적요·전표 구조를 활용한 Tx 코드 추천 및 검증 기능을 제공합니다.
 선택적으로 Google Cloud Vertex AI를 연결하면 업로드한 시트의 모든 행을 AI가 종합 검토할 수 있습니다.
 
+![EntryChecker 소개 화면](./introduce.png)
+
 배포 주소: [https://entrychecker-v2.onrender.com/](https://entrychecker-v2.onrender.com/)
 
 ## 2. 주요 기능
