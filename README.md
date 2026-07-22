@@ -5,6 +5,7 @@
 **EntryChecker**는 회계감사 실무에서 주의 깊게 살펴봐야 할 분개장과 부가가치세 코드 오류를 찾는 웹 기반 분석 도구입니다.
 
 감사인이 직접 검토 조건을 구성할 수 있는 규칙 엔진과 계정과목·적요·전표 구조를 활용한 Tx 코드 추천 및 검증 기능을 제공합니다.
+선택적으로 Google Cloud Vertex AI를 연결하면 업로드한 시트의 모든 행을 AI가 종합 검토할 수 있습니다.
 
 배포 주소: https://entrychecker.onrender.com/
 
@@ -44,6 +45,16 @@
 
 추천 결과는 검토 보조 자료이며, 신고 또는 세무 판단 전에 증빙과 거래 사실을 확인해야 합니다.
 
+### Vertex AI 전체 시트 분석
+
+- 업로드한 모든 행에 원본 시트 행번호를 붙여 Gemini에 전달
+- 중요 위험, 전체 패턴, Tx·부가세 검토사항과 추가 감사절차 제시
+- 발견사항마다 근거 시트 행번호 표시
+- JSON 스키마 기반의 일관된 분석 보고서
+- 셀 내부의 문장을 명령으로 실행하지 않는 프롬프트 인젝션 방어 지침
+
+이 기능을 실행하면 업로드 데이터가 설정된 Google Cloud 프로젝트로 전송되고 Vertex AI 사용 비용이 발생할 수 있습니다. AI 결과는 감사·세무 결론이 아닌 검토 보조자료입니다.
+
 ## 3. 사용 방법
 
 1. `분개장 불러오기`에서 CSV 또는 XLSX 파일을 선택합니다.
@@ -51,6 +62,7 @@
 3. 좌측에서 분석 조건과 `AND` / `OR` 그룹을 구성합니다.
 4. `규칙 기반 분석`을 실행합니다.
 5. 강조된 분개와 Tx 불일치를 검토하고 검토상태를 기록합니다.
+6. 필요한 경우 데이터 전송 안내에 동의하고 `AI 전체 분석`을 실행합니다.
 
 샘플 파일은 `sample/분개장.xlsx`, `sample/분개장(오류).csv`에 있습니다.
 
@@ -61,6 +73,24 @@
 ```
 
 브라우저에서 `http://127.0.0.1:8000/`으로 접속합니다.
+
+### Vertex AI 설정
+
+서비스 계정 JSON은 저장소나 `.env`에 넣지 말고 저장소 밖의 안전한 경로에 보관합니다. 서비스 계정에는 필요한 최소한의 Vertex AI 호출 권한만 부여하세요.
+
+```powershell
+$env:GOOGLE_CLOUD_PROJECT='your-project-id'
+$env:GOOGLE_CLOUD_LOCATION='global'
+$env:GOOGLE_APPLICATION_CREDENTIALS='C:\secure\vertex-service-account.json'
+$env:VERTEX_MODEL='gemini-3.5-flash'
+```
+
+선택 안전장치:
+
+- `VERTEX_MAX_ROWS` — 전체 분석 허용 행 수, 기본값 `20000`
+- `VERTEX_MAX_INPUT_CHARS` — 모델에 보내는 JSON 최대 문자 수, 기본값 `3000000`
+
+Render에서는 서비스 계정 JSON을 저장소에 커밋하지 말고 Secret File로 등록한 뒤, 그 파일 경로를 `GOOGLE_APPLICATION_CREDENTIALS`에 설정합니다.
 
 ## 5. 테스트
 

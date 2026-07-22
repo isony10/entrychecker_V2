@@ -14,6 +14,10 @@ let dataHeaders = [], journalData = [], originalJournalData = [], lastRuleMap = 
 const $file = document.getElementById('file-upload');
 const $fileName = document.getElementById('file-name');
 const $runAnalysis = document.getElementById('run-analysis');
+const $runAiAnalysis = document.getElementById('run-ai-analysis');
+const $aiInstruction = document.getElementById('ai-instruction');
+const $aiDataConsent = document.getElementById('ai-data-consent');
+const $aiReport = document.getElementById('ai-report');
 const $logicTree = document.getElementById('logic-tree');
 const $log = document.getElementById('log-content');
 const $taxSummary = document.getElementById('tax-summary');
@@ -117,6 +121,94 @@ function collectValues(tree, vals = {}) { for (const it of tree.items) { if (it.
 function logMsg(msg, type = 'info') { const p = document.createElement('p'); p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`; if (type === 'error') p.classList.add('text-red-400'); if (type === 'success') p.classList.add('text-green-400'); $log.prepend(p); }
 function showLoading(show) { $loading.classList.toggle('hidden', !show); $loading.classList.toggle('flex', show); }
 function formatWon(v) { return Number(v || 0).toLocaleString(); }
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+  })[ch]);
+}
+
+function renderAiReport(report) {
+  const meta = report.analysis_metadata || {};
+  const risk = report.overall_risk || '중간';
+  const riskStyle = risk === '높음'
+    ? 'bg-red-100 text-red-800 border-red-200'
+    : risk === '낮음'
+      ? 'bg-green-100 text-green-800 border-green-200'
+      : 'bg-amber-100 text-amber-800 border-amber-200';
+  const findings = Array.isArray(report.findings) ? report.findings : [];
+  const metrics = Array.isArray(report.key_metrics) ? report.key_metrics : [];
+  const listSection = (title, items) => {
+    if (!Array.isArray(items) || !items.length) return '';
+    return `<div><h5 class="font-bold text-sm mb-1">${escapeHtml(title)}</h5><ul class="list-disc pl-5 text-sm text-gray-700 space-y-1">${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul></div>`;
+  };
+
+  $aiReport.classList.remove('hidden');
+  $aiReport.innerHTML = `
+    <div class="border border-violet-200 rounded-lg overflow-hidden bg-white">
+      <div class="px-4 py-3 bg-violet-50 border-b border-violet-200 flex items-center gap-3">
+        <h4 class="font-bold text-violet-900"><i class="fas fa-wand-magic-sparkles mr-2"></i>AI 전체 시트 분석</h4>
+        <span class="px-2 py-1 rounded-full border text-xs font-bold ${riskStyle}">종합 위험도 ${escapeHtml(risk)}</span>
+        <span class="ml-auto text-xs text-gray-500">${formatWon(meta.analyzed_rows)}행 · ${escapeHtml(meta.model || '')}</span>
+      </div>
+      <div class="p-4 space-y-4">
+        <p class="text-sm leading-6 text-gray-800">${escapeHtml(report.executive_summary || '')}</p>
+        ${metrics.length ? `<div class="grid grid-cols-1 md:grid-cols-3 gap-2">${metrics.map(metric => `
+          <div class="border rounded p-3 bg-gray-50">
+            <div class="text-xs text-gray-500">${escapeHtml(metric.name)}</div>
+            <div class="font-bold text-gray-900 mt-1">${escapeHtml(metric.value)}</div>
+            <div class="text-xs text-gray-600 mt-1">${escapeHtml(metric.interpretation)}</div>
+          </div>`).join('')}</div>` : ''}
+        <div>
+          <h5 class="font-bold text-sm mb-2">주요 발견사항 (${formatWon(findings.length)}건)</h5>
+          <div class="space-y-2">${findings.length ? findings.map(finding => {
+            const severity = finding.severity || '중간';
+            const severityStyle = severity === '높음' ? 'text-red-700 bg-red-50' : severity === '낮음' ? 'text-green-700 bg-green-50' : 'text-amber-700 bg-amber-50';
+            const rows = Array.isArray(finding.row_numbers) ? finding.row_numbers : [];
+            return `<div class="border rounded-lg p-3">
+              <div class="flex items-center gap-2"><span class="text-xs font-bold px-2 py-1 rounded ${severityStyle}">${escapeHtml(severity)}</span><strong class="text-sm">${escapeHtml(finding.title)}</strong></div>
+              <p class="text-sm text-gray-700 mt-2">${escapeHtml(finding.description)}</p>
+              <p class="text-xs text-gray-500 mt-2"><strong>근거 행:</strong> ${rows.length ? rows.map(escapeHtml).join(', ') : '특정 행 없음'}</p>
+              <p class="text-xs text-gray-600 mt-1"><strong>근거:</strong> ${escapeHtml(finding.evidence)}</p>
+              <p class="text-xs text-violet-800 mt-1"><strong>권고 절차:</strong> ${escapeHtml(finding.recommendation)}</p>
+            </div>`;
+          }).join('') : '<p class="text-sm text-gray-500">보고된 주요 발견사항이 없습니다.</p>'}</div>
+        </div>
+        ${listSection('전체 패턴', report.patterns)}
+        ${listSection('Tx·부가세 검토사항', report.tax_review)}
+        ${listSection('분석 한계', report.limitations)}
+        <p class="text-xs text-gray-500 border-t pt-3">AI 결과는 감사·세무 결론이 아니며, 원본 증빙과 거래 사실을 확인해야 합니다.</p>
+      </div>
+    </div>`;
+}
+
+async function responseError(res) {
+  const text = await res.text();
+  try { return JSON.parse(text).error || text; } catch (_) { return text; }
+}
+
+async function runAiSheetAnalysis() {
+  const f = $file.files[0];
+  if (!f) { logMsg('파일을 먼저 선택하세요.', 'error'); return; }
+  if (!$aiDataConsent.checked) { logMsg('Vertex AI 데이터 전송 확인에 체크해주세요.', 'error'); return; }
+
+  const fd = new FormData();
+  fd.append('file', f);
+  fd.append('instruction', $aiInstruction.value.trim());
+  fd.append('data_transfer_consent', 'true');
+  showLoading(true);
+  logMsg('Vertex AI가 전체 시트를 검토하고 있습니다. 파일 크기에 따라 시간이 걸릴 수 있습니다.', 'info');
+  try {
+    const res = await fetch('/ai_analyze_sheet', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(await responseError(res));
+    const report = await res.json();
+    renderAiReport(report);
+    logMsg(`AI 전체 분석 완료 – ${formatWon(report.analysis_metadata?.analyzed_rows)}행 검토`, 'success');
+  } catch (e) {
+    logMsg('AI 전체 분석 오류: ' + e.message, 'error');
+  } finally {
+    showLoading(false);
+  }
+}
 
 function renderTaxSummary(summary = [], validation = null) {
   lastTaxSummary = summary;
@@ -276,6 +368,8 @@ document.addEventListener('DOMContentLoaded', () => {
     $file.onchange = async e => {
         const f = e.target.files[0];
         if (!f) return;
+        $aiReport.classList.add('hidden');
+        $aiReport.innerHTML = '';
         $fileName.textContent = f.name;
         logMsg(`파일 선택: ${f.name}`, 'info');
         const fd = new FormData();
@@ -302,6 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
     $runAnalysis.onclick = runRuleBasedAnalysis;
+    $runAiAnalysis.onclick = runAiSheetAnalysis;
     $tableContainer.onchange = e => {
         const sel = e.target.closest('.review-status');
         if (!sel) return;

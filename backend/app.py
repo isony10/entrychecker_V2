@@ -9,6 +9,11 @@ if __name__ == "__main__":
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from backend.analyzer import analyze_journal
+from backend.vertex_analyzer import (
+    VertexAnalysisError,
+    VertexConfigurationError,
+    analyze_sheet_with_vertex,
+)
 
 app = Flask(__name__,
             static_folder=os.path.join(os.path.dirname(__file__), '..', 'frontend', 'static'),
@@ -74,6 +79,30 @@ def analyze():
         return Response(json.dumps(cleaned, ensure_ascii=False), mimetype='application/json')
     except Exception as e:
         return f"분석 중 오류 발생: {str(e)}", 500
+
+
+@app.route('/ai_analyze_sheet', methods=['POST'])
+def ai_analyze_sheet():
+    if 'file' not in request.files:
+        return jsonify({'error': '파일이 없습니다.'}), 400
+    if request.form.get('data_transfer_consent') != 'true':
+        return jsonify({'error': 'Vertex AI 데이터 전송 확인이 필요합니다.'}), 400
+
+    file = request.files['file']
+    try:
+        df = read_file_to_df(file)
+        report = analyze_sheet_with_vertex(
+            df,
+            file.filename,
+            request.form.get('instruction', ''),
+        )
+        return jsonify(clean_nan(report))
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except VertexConfigurationError as e:
+        return jsonify({'error': str(e)}), 503
+    except VertexAnalysisError as e:
+        return jsonify({'error': str(e)}), 502
 
 if __name__ == '__main__':
     # 호스트를 '0.0.0.0'으로 지정해야 클라우드 호스팅 환경에서 외부 접근이 가능하다

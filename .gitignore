@@ -175,6 +175,10 @@ pyrightconfig.json
 
 .idea/
 backend/.env
+/secrets/
+service-account*.json
+vertex-credentials*.json
+vertex-service-account*.json
 ~$*.xlsx
 *~$*
 sample/분개장(Tx코드오류).csv
