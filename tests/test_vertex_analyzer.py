@@ -15,6 +15,7 @@ from backend.vertex_analyzer import (
     FLEX_HEADERS,
     MANUAL_AI_ANALYSIS_INSTRUCTIONS,
     MAX_OUTPUT_TOKENS,
+    REPORT_SCHEMA,
     SERVICE_TIER,
     SheetTooLargeError,
     VertexConfigurationError,
@@ -33,6 +34,16 @@ class VertexPayloadTests(unittest.TestCase):
         self.assertIn(MANUAL_AI_ANALYSIS_INSTRUCTIONS, combined)
         self.assertIn("같은 전표번호를 가진 모든 행은 하나의 전표세트", combined)
         self.assertIn("전체 행의 차변금액 합계와 대변금액 합계", combined)
+        self.assertIn("시트 행번호", combined)
+        self.assertIn("'행'이라는 단어", combined)
+        self.assertIn("전표번호만 사용", combined)
+
+    def test_finding_schema_uses_voucher_numbers_instead_of_row_numbers(self):
+        finding_schema = REPORT_SCHEMA["properties"]["findings"]["items"]
+
+        self.assertIn("voucher_numbers", finding_schema["properties"])
+        self.assertIn("voucher_numbers", finding_schema["required"])
+        self.assertNotIn("row_numbers", finding_schema["properties"])
 
     def test_default_model_is_supported_vertex_model(self):
         with patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "test-project"}, clear=True):
@@ -95,7 +106,7 @@ class VertexPayloadTests(unittest.TestCase):
             },
         )
 
-    def test_payload_contains_every_row_and_sheet_row_numbers(self):
+    def test_payload_contains_every_row_without_sheet_row_numbers(self):
         df = pd.DataFrame([
             {"전표번호": "A1", "계정과목": "제품매출", "대변금액": "1,000"},
             {"전표번호": "A2", "계정과목": "접대비", "차변금액": "500"},
@@ -104,7 +115,8 @@ class VertexPayloadTests(unittest.TestCase):
         payload, serialized = prepare_sheet_payload(df, "sample.xlsx")
 
         self.assertEqual(payload["profile"]["row_count"], 2)
-        self.assertEqual([row["시트행번호"] for row in payload["rows"]], [2, 3])
+        self.assertTrue(all("시트행번호" not in row for row in payload["rows"]))
+        self.assertEqual([row["전표번호"] for row in payload["rows"]], ["A1", "A2"])
         self.assertEqual(payload["rows"][1]["계정과목"], "접대비")
         self.assertEqual(json.loads(serialized)["rows"], payload["rows"])
 
@@ -129,7 +141,6 @@ class VertexPayloadTests(unittest.TestCase):
                 "debit_sum": 100.0,
                 "credit_sum": 90.0,
                 "difference": 10.0,
-                "sheet_row_numbers": [4, 5],
             }],
         )
 

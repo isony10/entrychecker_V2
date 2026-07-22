@@ -175,11 +175,11 @@ function renderAiReport(report) {
           <div class="space-y-2">${findings.length ? findings.map(finding => {
             const severity = finding.severity || '중간';
             const severityStyle = severity === '높음' ? 'text-red-300 bg-red-500/10' : severity === '낮음' ? 'text-emerald-300 bg-emerald-500/10' : 'text-amber-300 bg-amber-500/10';
-            const rows = Array.isArray(finding.row_numbers) ? finding.row_numbers : [];
+            const vouchers = Array.isArray(finding.voucher_numbers) ? finding.voucher_numbers : [];
             return `<div class="border border-slate-700 rounded-lg p-3 bg-slate-800/70">
               <div class="flex items-center gap-2"><span class="text-xs font-bold px-2 py-1 rounded ${severityStyle}">${escapeHtml(severity)}</span><strong class="text-sm text-white">${escapeHtml(finding.title)}</strong></div>
               <p class="text-sm text-slate-300 mt-2">${escapeHtml(finding.description)}</p>
-              <p class="text-xs text-slate-400 mt-2"><strong>근거 행:</strong> ${rows.length ? rows.map(escapeHtml).join(', ') : '특정 행 없음'}</p>
+              <p class="text-xs text-slate-400 mt-2"><strong>관련 전표번호:</strong> ${vouchers.length ? vouchers.map(escapeHtml).join(', ') : '전표번호 확인 불가'}</p>
               <p class="text-xs text-slate-300 mt-1"><strong>근거:</strong> ${escapeHtml(finding.evidence)}</p>
               <p class="text-xs text-violet-300 mt-1"><strong>권고 절차:</strong> ${escapeHtml(finding.recommendation)}</p>
             </div>`;
