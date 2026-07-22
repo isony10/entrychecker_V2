@@ -26,6 +26,7 @@ const $aiInstructionError = document.getElementById('ai-instruction-error');
 const $aiDataConsent = document.getElementById('ai-data-consent');
 const $logicTree = document.getElementById('logic-tree');
 const $log = document.getElementById('log-content');
+const $aiResult = document.getElementById('ai-result-content');
 const $taxSummary = document.getElementById('tax-summary');
 const $tableContainer = document.getElementById('table-container');
 const $tableWrap = $tableContainer;
@@ -124,7 +125,14 @@ function deleteItem(tree, id) { tree.items = tree.items.filter(it => { if (it.id
 function collectRuleIds(tree, set = new Set()) { for (const it of tree.items) { if (it.type === 'cond') set.add(it.rule); else if (it.type === 'group') collectRuleIds(it, set); } return set; }
 function collectValues(tree, vals = {}) { for (const it of tree.items) { if (it.type === 'cond') { if (it.rule === 'keyword_search') vals[it.rule] = { value: it.value, mode: it.mode }; else if (it.rule === 'amount_over') vals[it.rule] = { op: it.op, value: it.value, target: it.target }; else if (it.rule === 'party_freq') vals[it.rule] = { op: it.op, value: it.value }; } else if (it.type === 'group') collectValues(it, vals); } return vals; }
 
-function logMsg(msg, type = 'info') { const p = document.createElement('p'); p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`; if (type === 'error') p.classList.add('text-red-400'); if (type === 'success') p.classList.add('text-green-400'); $log.prepend(p); }
+function logMsg(msg, type = 'info') {
+  const p = document.createElement('p');
+  p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  if (type === 'error') p.classList.add('text-red-400');
+  if (type === 'success') p.classList.add('text-green-400');
+  $log.appendChild(p);
+  requestAnimationFrame(() => { $log.scrollTop = $log.scrollHeight; });
+}
 function showLoading(show) { $loading.classList.toggle('hidden', !show); $loading.classList.toggle('flex', show); }
 function formatWon(v) { return Number(v || 0).toLocaleString(); }
 function escapeHtml(value) {
@@ -147,7 +155,7 @@ function renderAiReport(report) {
   };
 
   const article = document.createElement('article');
-  article.className = 'my-3 border border-violet-400/40 rounded-xl overflow-hidden bg-slate-900 font-sans shadow-lg';
+  article.className = 'border border-violet-400/40 rounded-xl overflow-hidden bg-slate-900 font-sans shadow-lg';
   article.innerHTML = `
       <div class="px-4 py-3 bg-violet-500/10 border-b border-violet-400/30 flex flex-wrap items-center gap-3">
         <h4 class="font-bold text-violet-200"><i class="fas fa-wand-magic-sparkles mr-2"></i>AI 전체 시트 분석 결과</h4>
@@ -183,7 +191,8 @@ function renderAiReport(report) {
         <p class="text-xs text-slate-500 border-t border-slate-700 pt-3">AI 결과는 감사·세무 결론이 아니며, 원본 증빙과 거래 사실을 확인해야 합니다.</p>
       </div>
   `;
-  $log.prepend(article);
+  $aiResult.replaceChildren(article);
+  $aiResult.scrollTop = 0;
 }
 
 async function responseError(res) {
