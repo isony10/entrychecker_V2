@@ -5,11 +5,12 @@
 **EntryChecker**는 회계감사 실무에서 주의 깊게 살펴봐야 할 분개장과 부가가치세 코드 오류를 찾는 웹 기반 분석 도구입니다.
 
 감사인이 직접 검토 조건을 구성할 수 있는 규칙 엔진과 계정과목·적요·전표 구조를 활용한 Tx 코드 추천 및 검증 기능을 제공합니다.
-선택적으로 Google Cloud Vertex AI를 연결하면 업로드한 시트의 모든 행을 AI가 종합 검토할 수 있습니다.
+배포 서비스에는 Google Cloud Vertex AI API가 이미 연결되어 있어, 별도 설정 없이 AI 전체 분석 기능을 바로 사용할 수 있습니다.
+
+> [!IMPORTANT]
+> **[EntryChecker 바로 사용하기 →](https://entrychecker-v2.onrender.com/)**
 
 ![EntryChecker 소개 화면](./introduce.png)
-
-배포 주소: [https://entrychecker-v2.onrender.com/](https://entrychecker-v2.onrender.com/)
 
 ## 2. 주요 기능
 
@@ -67,44 +68,4 @@
 6. 열 제목을 클릭해 정렬하고, 제목을 드래그해 순서를 바꾸거나 오른쪽 경계선을 드래그해 너비를 조절합니다.
 7. 필요한 경우 AI 분석 요청을 입력하고 데이터 전송 안내에 동의한 뒤 `AI 분석 실행`을 누릅니다. 일반 분석 로그는 좌측 하단 위쪽 패널, AI 보고서는 그 아래 전용 패널에 표시됩니다.
 
-기본 예제 파일은 `sample/분개장(간소).csv`입니다. 실제 업무 파일은 저장소에 커밋하지 마세요.
-
-## 4. 로컬 실행
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m backend.app
-```
-
-브라우저에서 `http://127.0.0.1:8000/`으로 접속합니다.
-
-### Vertex AI 설정
-
-서비스 계정에는 필요한 최소한의 Vertex AI 호출 권한만 부여하세요. 운영 환경에서는 Secret File이나 비밀 환경변수를 사용하고, 로컬 `.env`는 Git에 올리지 않습니다.
-
-저장소 루트의 `.env.example`을 `.env`로 복사하고 실제 값을 입력합니다. 앱은 시작할 때 `.env`를 자동으로 읽으며, `GOOGLE_SERVICE_ACCOUNT_JSON`에 한 줄로 저장된 서비스 계정 JSON을 Vertex 인증에 사용합니다. `.env`는 Git에서 제외됩니다.
-
-```dotenv
-GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_CLOUD_LOCATION=global
-VERTEX_MODEL=gemini-3.1-flash-lite
-GOOGLE_SERVICE_ACCOUNT_JSON='{"type":"service_account","project_id":"your-project-id","private_key_id":"...","private_key":"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n","client_email":"service-account@your-project-id.iam.gserviceaccount.com","token_uri":"https://oauth2.googleapis.com/token"}'
-```
-
-기존 방식처럼 `GOOGLE_APPLICATION_CREDENTIALS`에 저장소 밖 JSON 파일 경로를 지정해도 계속 사용할 수 있습니다. `GOOGLE_SERVICE_ACCOUNT_JSON`이 있으면 그 값을 우선하여 인증 객체를 직접 만듭니다.
-
-선택 안전장치:
-
-- `VERTEX_MAX_ROWS` — 전체 분석 허용 행 수, 기본값 `20000`
-- `VERTEX_MAX_INPUT_CHARS` — 모델에 보내는 JSON 최대 문자 수, 기본값 `3000000`
-- AI 응답은 실행당 최대 `8192` 출력 토큰으로 제한되며, 완료 로그에 입력·출력·총 토큰 수가 표시됩니다.
-- 요청은 Vertex AI Flex PayGo 전용 헤더를 사용합니다. Gemini 3.1 Flash-Lite의 `global` 엔드포인트에서 처리되며, 완료 로그의 트래픽 유형이 `ON_DEMAND_FLEX`인지 확인할 수 있습니다.
-
-Render에서는 서비스 계정 JSON을 저장소에 커밋하지 말고 Secret File로 등록한 뒤, 그 파일 경로를 `GOOGLE_APPLICATION_CREDENTIALS`에 설정합니다. `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION`, `VERTEX_MODEL`도 Render 환경변수로 등록합니다.
-
-## 5. 테스트
-
-```powershell
-.\.venv\Scripts\python.exe -B -m unittest discover -s tests
-```
+기본 예제 파일은 `sample/분개장(간소).csv`입니다.
