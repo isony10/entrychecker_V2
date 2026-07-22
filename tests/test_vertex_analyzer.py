@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app import app
 from backend.vertex_analyzer import (
     MAX_OUTPUT_TOKENS,
+    SERVICE_TIER,
     SheetTooLargeError,
     _token_usage,
     load_vertex_config,
@@ -23,10 +24,13 @@ from backend.vertex_analyzer import (
 class VertexPayloadTests(unittest.TestCase):
     def test_default_model_is_supported_vertex_model(self):
         with patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "test-project"}, clear=True):
-            self.assertEqual(load_vertex_config().model, "gemini-2.5-flash")
+            self.assertEqual(load_vertex_config().model, "gemini-3.1-flash-lite")
 
-    def test_output_token_limit_is_1000(self):
-        self.assertEqual(MAX_OUTPUT_TOKENS, 1000)
+    def test_output_token_limit_is_8192(self):
+        self.assertEqual(MAX_OUTPUT_TOKENS, 8192)
+
+    def test_service_tier_is_flex(self):
+        self.assertEqual(SERVICE_TIER, "flex")
 
     def test_token_usage_is_extracted_from_vertex_response(self):
         response = SimpleNamespace(
@@ -85,6 +89,25 @@ class VertexRouteTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+        analyze_mock.assert_not_called()
+
+    @patch("backend.app.analyze_sheet_with_vertex")
+    def test_route_requires_ai_instruction(self, analyze_mock):
+        response = self.client.post(
+            "/ai_analyze_sheet",
+            data={
+                "file": (self._file(), "sample.csv"),
+                "data_transfer_consent": "true",
+                "instruction": "   ",
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()["error"],
+            "AI에게 요청할 분석 내용을 입력해주세요.",
+        )
         analyze_mock.assert_not_called()
 
     @patch("backend.app.analyze_sheet_with_vertex")

@@ -87,6 +87,9 @@ def ai_analyze_sheet():
         return jsonify({'error': '파일이 없습니다.'}), 400
     if request.form.get('data_transfer_consent') != 'true':
         return jsonify({'error': 'Vertex AI 데이터 전송 확인이 필요합니다.'}), 400
+    instruction = request.form.get('instruction', '').strip()
+    if not instruction:
+        return jsonify({'error': 'AI에게 요청할 분석 내용을 입력해주세요.'}), 400
 
     file = request.files['file']
     try:
@@ -94,7 +97,7 @@ def ai_analyze_sheet():
         report = analyze_sheet_with_vertex(
             df,
             file.filename,
-            request.form.get('instruction', ''),
+            instruction,
         )
         return jsonify(clean_nan(report))
     except ValueError as e:

@@ -16,6 +16,7 @@ const $fileName = document.getElementById('file-name');
 const $runAnalysis = document.getElementById('run-analysis');
 const $runAiAnalysis = document.getElementById('run-ai-analysis');
 const $aiInstruction = document.getElementById('ai-instruction');
+const $aiInstructionError = document.getElementById('ai-instruction-error');
 const $aiDataConsent = document.getElementById('ai-data-consent');
 const $aiReport = document.getElementById('ai-report');
 const $logicTree = document.getElementById('logic-tree');
@@ -189,11 +190,19 @@ async function responseError(res) {
 async function runAiSheetAnalysis() {
   const f = $file.files[0];
   if (!f) { logMsg('파일을 먼저 선택하세요.', 'error'); return; }
+  const instruction = $aiInstruction.value.trim();
+  if (!instruction) {
+    $aiInstructionError.classList.remove('hidden');
+    $aiInstruction.classList.add('border-red-500', 'ring-2', 'ring-red-100');
+    $aiInstruction.focus();
+    logMsg('AI에게 요청할 분석 내용을 입력해주세요.', 'error');
+    return;
+  }
   if (!$aiDataConsent.checked) { logMsg('Vertex AI 데이터 전송 확인에 체크해주세요.', 'error'); return; }
 
   const fd = new FormData();
   fd.append('file', f);
-  fd.append('instruction', $aiInstruction.value.trim());
+  fd.append('instruction', instruction);
   fd.append('data_transfer_consent', 'true');
   showLoading(true);
   logMsg('Vertex AI가 전체 시트를 검토하고 있습니다. 파일 크기에 따라 시간이 걸릴 수 있습니다.', 'info');
@@ -207,7 +216,7 @@ async function runAiSheetAnalysis() {
     logMsg(
       `AI 전체 분석 완료 – ${formatWon(meta.analyzed_rows)}행 검토 · ` +
       `토큰 입력 ${formatWon(usage.prompt_tokens)} / 출력 ${formatWon(usage.output_tokens)} / ` +
-      `총 ${formatWon(usage.total_tokens)} (출력 상한 ${formatWon(meta.max_output_tokens)}토큰)`,
+      `총 ${formatWon(usage.total_tokens)} (출력 상한 ${formatWon(meta.max_output_tokens)}토큰 · ${meta.service_tier || 'standard'} 모드)`,
       'success'
     );
   } catch (e) {
@@ -372,6 +381,11 @@ async function runRuleBasedAnalysis() {
 
 document.addEventListener('DOMContentLoaded', () => {
     renderTree();
+    $aiInstruction.addEventListener('input', () => {
+        if (!$aiInstruction.value.trim()) return;
+        $aiInstructionError.classList.add('hidden');
+        $aiInstruction.classList.remove('border-red-500', 'ring-2', 'ring-red-100');
+    });
     $file.onchange = async e => {
         const f = e.target.files[0];
         if (!f) return;

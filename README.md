@@ -62,7 +62,7 @@
 3. 좌측에서 분석 조건과 `AND` / `OR` 그룹을 구성합니다.
 4. `규칙 기반 분석`을 실행합니다.
 5. 강조된 분개와 Tx 불일치를 검토하고 검토상태를 기록합니다.
-6. 필요한 경우 데이터 전송 안내에 동의하고 `AI 전체 분석`을 실행합니다.
+6. 필요한 경우 AI 분석 요청을 입력하고 데이터 전송 안내에 동의한 뒤 `AI 전체 분석`을 실행합니다.
 
 샘플 파일은 `sample/분개장.xlsx`, `sample/분개장(오류).csv`에 있습니다.
 
@@ -82,14 +82,15 @@
 $env:GOOGLE_CLOUD_PROJECT='your-project-id'
 $env:GOOGLE_CLOUD_LOCATION='global'
 $env:GOOGLE_APPLICATION_CREDENTIALS='C:\secure\vertex-service-account.json'
-$env:VERTEX_MODEL='gemini-2.5-flash'
+$env:VERTEX_MODEL='gemini-3.1-flash-lite'
 ```
 
 선택 안전장치:
 
 - `VERTEX_MAX_ROWS` — 전체 분석 허용 행 수, 기본값 `20000`
 - `VERTEX_MAX_INPUT_CHARS` — 모델에 보내는 JSON 최대 문자 수, 기본값 `3000000`
-- AI 응답은 실행당 최대 `1000` 출력 토큰으로 제한되며, 완료 로그에 입력·출력·총 토큰 수가 표시됩니다.
+- AI 응답은 실행당 최대 `8192` 출력 토큰으로 제한되며, 완료 로그에 입력·출력·총 토큰 수가 표시됩니다.
+- 요청은 기본적으로 Vertex AI Flex 서비스 티어를 사용합니다. 비용을 낮추는 대신 처리 시작과 완료가 늦어질 수 있습니다.
 
 Render에서는 서비스 계정 JSON을 저장소에 커밋하지 말고 Secret File로 등록한 뒤, 그 파일 경로를 `GOOGLE_APPLICATION_CREDENTIALS`에 설정합니다.
 
