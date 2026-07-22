@@ -13,18 +13,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app import app
 from backend.vertex_analyzer import (
     FLEX_HEADERS,
+    MANUAL_AI_ANALYSIS_INSTRUCTIONS,
     MAX_OUTPUT_TOKENS,
     SERVICE_TIER,
     SheetTooLargeError,
     VertexConfigurationError,
     _load_service_account_info,
     _token_usage,
+    build_system_instruction,
     load_vertex_config,
     prepare_sheet_payload,
 )
 
 
 class VertexPayloadTests(unittest.TestCase):
+    def test_manual_instructions_are_included_in_system_instruction(self):
+        combined = build_system_instruction()
+
+        self.assertIn(MANUAL_AI_ANALYSIS_INSTRUCTIONS, combined)
+        self.assertIn("같은 전표번호를 가진 모든 행은 하나의 전표세트", combined)
+        self.assertIn("전체 행의 차변금액 합계와 대변금액 합계", combined)
+
     def test_default_model_is_supported_vertex_model(self):
         with patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "test-project"}, clear=True):
             self.assertEqual(load_vertex_config().model, "gemini-3.1-flash-lite")
@@ -98,6 +107,31 @@ class VertexPayloadTests(unittest.TestCase):
         self.assertEqual([row["시트행번호"] for row in payload["rows"]], [2, 3])
         self.assertEqual(payload["rows"][1]["계정과목"], "접대비")
         self.assertEqual(json.loads(serialized)["rows"], payload["rows"])
+
+    def test_voucher_balance_groups_rows_with_the_same_voucher_number(self):
+        df = pd.DataFrame([
+            {"전표일자": "2024-01-01", "전표번호": "A1", "차변금액": "100", "대변금액": "0"},
+            {"전표일자": "2024-01-02", "전표번호": "A1", "차변금액": "20", "대변금액": "120"},
+            {"전표일자": "2024-01-03", "전표번호": "A2", "차변금액": "100", "대변금액": "0"},
+            {"전표일자": "2024-01-03", "전표번호": "A2", "차변금액": "0", "대변금액": "90"},
+        ])
+
+        payload, _ = prepare_sheet_payload(df, "sample.xlsx")
+        balance = payload["profile"]["voucher_balance"]
+
+        self.assertEqual(balance["voucher_set_count"], 2)
+        self.assertEqual(balance["balanced_set_count"], 1)
+        self.assertEqual(balance["unbalanced_set_count"], 1)
+        self.assertEqual(
+            balance["unbalanced_sets"],
+            [{
+                "voucher_number": "A2",
+                "debit_sum": 100.0,
+                "credit_sum": 90.0,
+                "difference": 10.0,
+                "sheet_row_numbers": [4, 5],
+            }],
+        )
 
     def test_row_limit_rejects_partial_analysis(self):
         df = pd.DataFrame([{"값": 1}, {"값": 2}])

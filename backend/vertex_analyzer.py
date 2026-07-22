@@ -120,6 +120,27 @@ SYSTEM_INSTRUCTION = """당신은 한국 회계감사 실무자를 보조하는 
 패턴과 세무 검토사항은 각각 최대 3개, 한계는 최대 2개만 보고한다."""
 
 
+# ── 운영자 수동 AI 사전 지침 ──────────────────────────────────────────────
+# AI 전체 분석에 항상 적용할 지침을 아래 큰따옴표 안에서 직접 수정·추가한다.
+# 화면의 "AI에게 요청할 분석 내용"은 실행별 요청이고, 이 블록은 모든 실행에
+# 공통으로 먼저 적용되는 상시 지침이다.
+MANUAL_AI_ANALYSIS_INSTRUCTIONS = """
+- 같은 전표번호를 가진 모든 행은 하나의 전표세트다. 행별로 따로 판단하지 말고 반드시 전표번호별로 묶어서 검토한다.
+- 차대변 불일치는 개별 행의 차변·대변 공란 여부가 아니라, 같은 전표번호에 속한 전체 행의 차변금액 합계와 대변금액 합계를 비교해 판단한다.
+- 같은 전표번호의 차변 합계와 대변 합계가 일치하면 그 전표세트는 차대변 불일치로 보고하지 않는다.
+- 차대변 불일치를 발견사항으로 제시할 때는 해당 전표번호, 세트 전체 차변 합계, 세트 전체 대변 합계, 차액과 관련 시트 행번호를 함께 적는다.
+""".strip()
+
+
+def build_system_instruction():
+    """기본 역할과 운영자가 코드에서 관리하는 상시 지침을 결합한다."""
+    return (
+        f"{SYSTEM_INSTRUCTION}\n\n"
+        "[운영자 수동 사전 지침 - 모든 분석에 우선 적용]\n"
+        f"{MANUAL_AI_ANALYSIS_INSTRUCTIONS}"
+    )
+
+
 def _positive_int_env(name, default):
     raw = os.getenv(name, str(default)).strip()
     try:
@@ -200,10 +221,10 @@ def _find_column(df, aliases):
     return None
 
 
-def _numeric_sum(df, aliases):
+def _numeric_series(df, aliases):
     column = _find_column(df, aliases)
     if column is None:
-        return 0.0
+        return pd.Series(0.0, index=df.index, dtype="float64")
     values = (
         df[column]
         .astype(str)
@@ -211,7 +232,53 @@ def _numeric_sum(df, aliases):
         .str.strip()
         .replace({"": 0, "nan": 0, "None": 0})
     )
-    return float(pd.to_numeric(values, errors="coerce").fillna(0).sum())
+    return pd.to_numeric(values, errors="coerce").fillna(0)
+
+
+def _numeric_sum(df, aliases):
+    return float(_numeric_series(df, aliases).sum())
+
+
+def _voucher_balance_profile(df):
+    """전표번호별 차대변 합계를 미리 계산해 AI의 행별 오판을 방지한다."""
+    voucher_col = _find_column(df, ("전표번호", "전표 no", "전표NO", "voucher_no"))
+    if voucher_col is None:
+        return None
+
+    voucher_numbers = df[voucher_col].fillna("").astype(str).str.strip().reset_index(drop=True)
+    working = pd.DataFrame({
+        "voucher_number": voucher_numbers,
+        "sheet_row_number": range(2, len(df) + 2),
+        "debit": _numeric_series(df, ("차변금액", "차변", "차변 금액")).reset_index(drop=True),
+        "credit": _numeric_series(df, ("대변금액", "대변", "대변 금액")).reset_index(drop=True),
+    })
+    working = working[working["voucher_number"] != ""]
+
+    unbalanced_sets = []
+    balanced_count = 0
+    for voucher_number, group in working.groupby("voucher_number", sort=False):
+        debit_sum = float(group["debit"].sum())
+        credit_sum = float(group["credit"].sum())
+        difference = debit_sum - credit_sum
+        if abs(difference) < 1e-9:
+            balanced_count += 1
+            continue
+        unbalanced_sets.append({
+            "voucher_number": str(voucher_number),
+            "debit_sum": debit_sum,
+            "credit_sum": credit_sum,
+            "difference": difference,
+            "sheet_row_numbers": [int(value) for value in group["sheet_row_number"]],
+        })
+
+    return {
+        "grouping_column": str(voucher_col),
+        "grouping_rule": "같은 전표번호의 모든 행을 하나의 전표세트로 합산",
+        "voucher_set_count": int(working["voucher_number"].nunique()),
+        "balanced_set_count": balanced_count,
+        "unbalanced_set_count": len(unbalanced_sets),
+        "unbalanced_sets": unbalanced_sets,
+    }
 
 
 def _sheet_profile(df):
@@ -236,6 +303,9 @@ def _sheet_profile(df):
             {"account": str(account), "count": int(count)}
             for account, count in counts.items()
         ]
+    voucher_balance = _voucher_balance_profile(df)
+    if voucher_balance is not None:
+        profile["voucher_balance"] = voucher_balance
     return profile
 
 
@@ -304,7 +374,9 @@ def analyze_sheet_with_vertex(df, filename, user_instruction=""):
     instruction = (user_instruction or "").strip()[:2000]
     prompt = (
         "아래 JSON은 업로드된 분개장 전체다. 모든 rows를 빠짐없이 검토하라. "
-        "profile은 참고용 집계이며, 발견사항의 근거는 rows의 시트행번호로 제시하라.\n"
+        "profile은 참고용 집계이며, 발견사항의 근거는 rows의 시트행번호로 제시하라. "
+        "profile.voucher_balance는 같은 전표번호의 모든 행을 합산한 사전 계산값이므로 "
+        "차대변 불일치 판단에 우선 사용하라.\n"
         f"사용자 추가 요청: {instruction or '없음'}\n"
         f"분개장 전체 JSON:\n{serialized}"
     )
@@ -333,7 +405,7 @@ def analyze_sheet_with_vertex(df, filename, user_instruction=""):
                 model=config.model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=build_system_instruction(),
                     temperature=0.1,
                     max_output_tokens=MAX_OUTPUT_TOKENS,
                     response_mime_type="application/json",
