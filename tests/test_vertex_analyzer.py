@@ -154,6 +154,30 @@ class VertexRouteTests(unittest.TestCase):
     def _file(self):
         return io.BytesIO("전표번호,계정과목,차변금액\n1,접대비,1000\n".encode("utf-8-sig"))
 
+    def test_default_sample_is_served_and_previewable(self):
+        sample_response = self.client.get('/sample/default')
+
+        self.assertEqual(sample_response.status_code, 200)
+        self.assertIn('text/csv', sample_response.content_type)
+        sample_bytes = sample_response.data
+        sample_response.close()
+
+        preview_response = self.client.post(
+            '/preview',
+            data={
+                'file': (
+                    io.BytesIO(sample_bytes),
+                    '분개장(간소).csv',
+                ),
+            },
+            content_type='multipart/form-data',
+        )
+        payload = preview_response.get_json()
+
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(len(payload['rows']), 31)
+        self.assertIn('전표일자', payload['headers'])
+
     @patch("backend.app.analyze_sheet_with_vertex")
     def test_route_requires_explicit_transfer_consent(self, analyze_mock):
         response = self.client.post(

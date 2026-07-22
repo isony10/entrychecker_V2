@@ -182,6 +182,7 @@ vertex-service-account*.json
 ~$*.xlsx
 *~$*
 sample/분개장(Tx코드오류).csv
+/sample/분개장.xlsx
 
 # 개인 메모 (깃허브 업로드 금지)
 개인메모/

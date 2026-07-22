@@ -15,6 +15,7 @@ let tableColumnWidths = {};
 let tableSort = { column: null, direction: null };
 let currentTableView = null;
 let suppressTableSortClick = false;
+let currentJournalFile = null;
 
 const $file = document.getElementById('file-upload');
 const $fileName = document.getElementById('file-name');
@@ -191,7 +192,7 @@ async function responseError(res) {
 }
 
 async function runAiSheetAnalysis() {
-  const f = $file.files[0];
+  const f = currentJournalFile;
   if (!f) { logMsg('파일을 먼저 선택하세요.', 'error'); return; }
   const instruction = $aiInstruction.value.trim();
   if (!instruction) {
@@ -584,7 +585,7 @@ function renderCurrentTable() {
 }
 
 async function runRuleBasedAnalysis() {
-    const f = $file.files[0];
+    const f = currentJournalFile;
     if (!f) { logMsg('파일을 먼저 선택하세요.', 'error'); return; }
     const activeRules = [...collectRuleIds(logicTree)];
     const vals = collectValues(logicTree);
@@ -614,7 +615,57 @@ async function runRuleBasedAnalysis() {
     } catch (e) { logMsg('분석 오류: ' + e.message, 'error'); } finally { showLoading(false); }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+async function previewJournalFile(file, {
+    displayName = file.name,
+    startMessage = `파일 선택: ${file.name}`,
+    successMessage = '파일 파싱 및 미리보기 완료'
+} = {}) {
+    currentJournalFile = file;
+    $fileName.textContent = displayName;
+    logMsg(startMessage, 'info');
+    const fd = new FormData();
+    fd.append('file', file, file.name);
+    showLoading(true);
+    try {
+        const res = await fetch('/preview', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        originalJournalData = data.rows;
+        dataHeaders = data.headers;
+        journalData = originalJournalData.map((r, i) => ({ ...r, __idx: i }));
+        renderTaxSummary(data.tax_summary || [], data.tax_validation);
+        resetTableControls();
+        renderTable(journalData);
+        logMsg(successMessage, 'success');
+    } catch (err) {
+        logMsg('파일 파싱 오류: ' + err.message, 'error');
+        originalJournalData = [];
+        dataHeaders = [];
+        journalData = [];
+        resetTableControls();
+        $tableContainer.innerHTML = `<p class="text-red-500">${escapeHtml(err.message)}</p>`;
+    } finally {
+        showLoading(false);
+    }
+}
+
+async function loadDefaultJournal() {
+    try {
+        const res = await fetch('/sample/default', { cache: 'no-store' });
+        if (!res.ok) throw new Error(`기본 예제 다운로드 실패 (${res.status})`);
+        const blob = await res.blob();
+        const file = new File([blob], '분개장(간소).csv', { type: 'text/csv' });
+        await previewJournalFile(file, {
+            displayName: '분개장(간소).csv · 기본 예제',
+            startMessage: '기본 예제 자동 불러오기: 분개장(간소).csv',
+            successMessage: '기본 예제 미리보기 완료'
+        });
+    } catch (err) {
+        logMsg('기본 예제를 불러오지 못했습니다: ' + err.message, 'error');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
     renderTree();
     $aiInstruction.addEventListener('input', () => {
         if (!$aiInstruction.value.trim()) return;
@@ -624,32 +675,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $file.onchange = async e => {
         const f = e.target.files[0];
         if (!f) return;
-        $fileName.textContent = f.name;
-        logMsg(`파일 선택: ${f.name}`, 'info');
-        const fd = new FormData();
-        fd.append('file', f);
-        showLoading(true);
-        try {
-            const res = await fetch('/preview', { method: 'POST', body: fd });
-            if (!res.ok) throw new Error(await res.text());
-            const data = await res.json();
-            originalJournalData = data.rows;
-            dataHeaders = data.headers;
-            journalData = originalJournalData.map((r, i) => ({ ...r, __idx: i }));
-            renderTaxSummary(data.tax_summary || [], data.tax_validation);
-            resetTableControls();
-            renderTable(journalData);
-            logMsg('파일 파싱 및 미리보기 완료', 'success');
-        } catch (err) {
-            logMsg('파일 파싱 오류: ' + err.message, 'error');
-            originalJournalData = [];
-            dataHeaders = [];
-            journalData = [];
-            resetTableControls();
-            $tableContainer.innerHTML = `<p class="text-red-500">${err.message}</p>`;
-        } finally {
-            showLoading(false);
-        }
+        await previewJournalFile(f);
     };
     $runAnalysis.onclick = runRuleBasedAnalysis;
     $runAiAnalysis.onclick = runAiSheetAnalysis;
@@ -662,5 +688,6 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     document.getElementById('add-condition-btn').onclick = () => { const sel = document.getElementById('condition-select').value; logicTree.items.push(newCond(sel)); renderTree(); };
     document.getElementById('add-group-btn').onclick = () => { logicTree.items.push(newGroup()); renderTree(); };
-    logMsg('EntryChecker가 준비되었습니다. 파일을 업로드하고 분석을 시작하세요.');
+    logMsg('EntryChecker가 준비되었습니다. 기본 예제를 불러옵니다.');
+    await loadDefaultJournal();
 });

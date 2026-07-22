@@ -4,6 +4,8 @@ from flask import Flask, request, render_template, jsonify, Response
 import pandas as pd
 import math
 import json
+from pathlib import Path
+from flask import send_from_directory
 
 if __name__ == "__main__":
     sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -19,9 +21,21 @@ app = Flask(__name__,
             static_folder=os.path.join(os.path.dirname(__file__), '..', 'frontend', 'static'),
             template_folder=os.path.join(os.path.dirname(__file__), '..', 'frontend', 'templates'))
 
+SAMPLE_DIR = Path(__file__).resolve().parents[1] / 'sample'
+DEFAULT_SAMPLE_FILENAME = '분개장(간소).csv'
+
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/sample/default')
+def default_sample():
+    return send_from_directory(
+        SAMPLE_DIR,
+        DEFAULT_SAMPLE_FILENAME,
+        mimetype='text/csv; charset=utf-8',
+        max_age=0,
+    )
 
 def clean_nan(obj):
     if isinstance(obj, dict): return {k: clean_nan(v) for k, v in obj.items()}
