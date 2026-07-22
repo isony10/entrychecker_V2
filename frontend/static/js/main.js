@@ -202,7 +202,14 @@ async function runAiSheetAnalysis() {
     if (!res.ok) throw new Error(await responseError(res));
     const report = await res.json();
     renderAiReport(report);
-    logMsg(`AI 전체 분석 완료 – ${formatWon(report.analysis_metadata?.analyzed_rows)}행 검토`, 'success');
+    const meta = report.analysis_metadata || {};
+    const usage = meta.token_usage || {};
+    logMsg(
+      `AI 전체 분석 완료 – ${formatWon(meta.analyzed_rows)}행 검토 · ` +
+      `토큰 입력 ${formatWon(usage.prompt_tokens)} / 출력 ${formatWon(usage.output_tokens)} / ` +
+      `총 ${formatWon(usage.total_tokens)} (출력 상한 ${formatWon(meta.max_output_tokens)}토큰)`,
+      'success'
+    );
   } catch (e) {
     logMsg('AI 전체 분석 오류: ' + e.message, 'error');
   } finally {

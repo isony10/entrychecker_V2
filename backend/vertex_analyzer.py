@@ -1,8 +1,13 @@
 import json
+import logging
 import os
 from dataclasses import dataclass
 
 import pandas as pd
+
+
+logger = logging.getLogger(__name__)
+MAX_OUTPUT_TOKENS = 1000
 
 
 class VertexConfigurationError(RuntimeError):
@@ -96,7 +101,9 @@ SYSTEM_INSTRUCTION = """당신은 한국 회계감사 실무자를 보조하는 
 사기, 오류 또는 세무상 결론을 확정하지 말고 반드시 '검토 필요' 수준으로 표현한다.
 발견사항에는 근거가 되는 시트 행번호를 정확히 기재한다. 근거가 없는 행번호를 만들지 않는다.
 중요도 높은 항목을 우선하며, 같은 원인의 반복 항목은 하나로 묶는다.
-금액, 차대변, 전표 묶음, 시기, 거래처, 입력자, 계정과목, 적요, Tx 코드의 불일치와 집중도를 함께 살핀다."""
+금액, 차대변, 전표 묶음, 시기, 거래처, 입력자, 계정과목, 적요, Tx 코드의 불일치와 집중도를 함께 살핀다.
+출력은 1,000토큰 안에 완결된 JSON이 되도록 간결하게 작성한다. 핵심지표는 최대 3개, 발견사항은 최대 5개,
+패턴과 세무 검토사항은 각각 최대 3개, 한계는 최대 2개만 보고한다."""
 
 
 def _positive_int_env(name, default):
@@ -119,8 +126,8 @@ def load_vertex_config():
     return VertexConfig(
         project=project,
         location=os.getenv("GOOGLE_CLOUD_LOCATION", "global").strip() or "global",
-        model=os.getenv("VERTEX_MODEL", "gemini-3.5-flash").strip()
-        or "gemini-3.5-flash",
+        model=os.getenv("VERTEX_MODEL", "gemini-2.5-flash").strip()
+        or "gemini-2.5-flash",
         max_rows=_positive_int_env("VERTEX_MAX_ROWS", 20000),
         max_input_chars=_positive_int_env("VERTEX_MAX_INPUT_CHARS", 3000000),
     )
@@ -214,6 +221,15 @@ def _response_to_dict(response):
         raise VertexAnalysisError("Vertex AI 응답을 JSON으로 해석하지 못했습니다.") from exc
 
 
+def _token_usage(response):
+    usage = getattr(response, "usage_metadata", None)
+    return {
+        "prompt_tokens": int(getattr(usage, "prompt_token_count", 0) or 0),
+        "output_tokens": int(getattr(usage, "candidates_token_count", 0) or 0),
+        "total_tokens": int(getattr(usage, "total_token_count", 0) or 0),
+    }
+
+
 def analyze_sheet_with_vertex(df, filename, user_instruction=""):
     config = load_vertex_config()
     payload, serialized = prepare_sheet_payload(
@@ -251,15 +267,24 @@ def analyze_sheet_with_vertex(df, filename, user_instruction=""):
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
                     temperature=0.1,
-                    max_output_tokens=8192,
+                    max_output_tokens=MAX_OUTPUT_TOKENS,
                     response_mime_type="application/json",
                     response_json_schema=REPORT_SCHEMA,
                 ),
             )
+        token_usage = _token_usage(response)
+        logger.info(
+            "Vertex AI 토큰 사용량: 입력=%s, 출력=%s, 합계=%s, 출력상한=%s",
+            token_usage["prompt_tokens"],
+            token_usage["output_tokens"],
+            token_usage["total_tokens"],
+            MAX_OUTPUT_TOKENS,
+        )
         report = _response_to_dict(response)
     except (VertexConfigurationError, SheetTooLargeError, VertexAnalysisError):
         raise
     except Exception as exc:
+        logger.exception("Vertex AI 호출 실패: %s", exc)
         raise VertexAnalysisError(
             "Vertex AI 호출에 실패했습니다. 자격 증명, Vertex AI API 활성화, IAM 권한과 리전을 확인해주세요."
         ) from exc
@@ -269,5 +294,7 @@ def analyze_sheet_with_vertex(df, filename, user_instruction=""):
         "analyzed_rows": payload["profile"]["row_count"],
         "model": config.model,
         "location": config.location,
+        "max_output_tokens": MAX_OUTPUT_TOKENS,
+        "token_usage": token_usage,
     }
     return report

@@ -3,6 +3,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pandas as pd
@@ -10,10 +11,37 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.app import app
-from backend.vertex_analyzer import SheetTooLargeError, prepare_sheet_payload
+from backend.vertex_analyzer import (
+    MAX_OUTPUT_TOKENS,
+    SheetTooLargeError,
+    _token_usage,
+    load_vertex_config,
+    prepare_sheet_payload,
+)
 
 
 class VertexPayloadTests(unittest.TestCase):
+    def test_default_model_is_supported_vertex_model(self):
+        with patch.dict("os.environ", {"GOOGLE_CLOUD_PROJECT": "test-project"}, clear=True):
+            self.assertEqual(load_vertex_config().model, "gemini-2.5-flash")
+
+    def test_output_token_limit_is_1000(self):
+        self.assertEqual(MAX_OUTPUT_TOKENS, 1000)
+
+    def test_token_usage_is_extracted_from_vertex_response(self):
+        response = SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=120,
+                candidates_token_count=80,
+                total_token_count=200,
+            )
+        )
+
+        self.assertEqual(
+            _token_usage(response),
+            {"prompt_tokens": 120, "output_tokens": 80, "total_tokens": 200},
+        )
+
     def test_payload_contains_every_row_and_sheet_row_numbers(self):
         df = pd.DataFrame([
             {"전표번호": "A1", "계정과목": "제품매출", "대변금액": "1,000"},

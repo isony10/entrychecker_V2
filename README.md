@@ -82,13 +82,14 @@
 $env:GOOGLE_CLOUD_PROJECT='your-project-id'
 $env:GOOGLE_CLOUD_LOCATION='global'
 $env:GOOGLE_APPLICATION_CREDENTIALS='C:\secure\vertex-service-account.json'
-$env:VERTEX_MODEL='gemini-3.5-flash'
+$env:VERTEX_MODEL='gemini-2.5-flash'
 ```
 
 선택 안전장치:
 
 - `VERTEX_MAX_ROWS` — 전체 분석 허용 행 수, 기본값 `20000`
 - `VERTEX_MAX_INPUT_CHARS` — 모델에 보내는 JSON 최대 문자 수, 기본값 `3000000`
+- AI 응답은 실행당 최대 `1000` 출력 토큰으로 제한되며, 완료 로그에 입력·출력·총 토큰 수가 표시됩니다.
 
 Render에서는 서비스 계정 JSON을 저장소에 커밋하지 말고 Secret File로 등록한 뒤, 그 파일 경로를 `GOOGLE_APPLICATION_CREDENTIALS`에 설정합니다.
 
