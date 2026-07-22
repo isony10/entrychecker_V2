@@ -297,6 +297,18 @@ function adjustColumnWidths(tbl) {
   });
 }
 
+const preferredTableHeaders = [
+  '전표일자', '전표번호', '계정코드', '계정과목', '부가세코드',
+  '차변금액', '대변금액', '거래처코드', 'Tx추천코드', 'Tx분류',
+  'Tx신뢰도', 'Tx근거', 'Tx검증', '검토상태', '승인일자'
+];
+
+function getDisplayHeaders(headers) {
+  const preferred = preferredTableHeaders.filter(header => headers.includes(header));
+  const preferredSet = new Set(preferred);
+  return [...preferred, ...headers.filter(header => !preferredSet.has(header))];
+}
+
 function renderTable(rows, hi = new Set(), ruleMap = {}) {
   $tableWrap.classList.remove('hidden');
   // Ensure the table container aligns to the start when displaying data
@@ -309,13 +321,13 @@ function renderTable(rows, hi = new Set(), ruleMap = {}) {
     $tableWrap.innerHTML = '<p class="text-gray-500">표시할 데이터가 없습니다.</p>';
     return;
   }  const tbl = document.createElement('table'); tbl.className = 'text-sm text-left border-collapse';
-  const headers = [...dataHeaders];
+  const headers = getDisplayHeaders(dataHeaders);
   const head = `<thead class="bg-gray-100"><tr>${headers.map(h => `<th class="p-2 border-b font-semibold whitespace-nowrap">${h}</th>`).join('')}</tr></thead>`;
   const body = `<tbody>${rows.map((row, idx) => {
     const originalIndex = row.__idx;
     const isHighlighted = hi.has(idx);
     const cls = isHighlighted ? 'highlight' : '';
-    return `<tr class="border-b hover:bg-gray-50 ${cls}">${dataHeaders.map(c => {
+    return `<tr class="border-b hover:bg-gray-50 ${cls}">${headers.map(c => {
       if (c === '검토상태') {
         const value = row[c] || '미검토';
         if (!row['Tx추천코드']) return '<td class="p-2 whitespace-nowrap"></td>';

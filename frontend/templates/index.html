@@ -18,6 +18,7 @@
     .highlight { background-color:#fff1f2 !important; }
     .highlight .highlight-cell { color:#be123c; font-weight:600; }
     .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
+    #loading { left: 0; right: 0; width: max-content; margin-inline: auto; transform: none; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
@@ -40,13 +41,14 @@
         </label>
         <input type="file" id="file-upload" class="hidden" accept=".csv,.xls,.xlsx">
         <span id="file-name" class="text-sm text-slate-600 max-w-64 truncate">선택된 파일 없음</span>
-        <div id="loading" class="hidden flex items-center space-x-2 text-sm font-semibold text-blue-600">
-          <div class="loader"></div>
-          <span>분석중...</span>
-        </div>
       </div>
     </div>
   </header>
+
+  <div id="loading" class="hidden fixed top-4 z-50 items-center gap-3 rounded-full border border-slate-700 bg-slate-950/95 px-4 py-2.5 text-sm font-semibold text-white shadow-2xl" role="status" aria-live="polite">
+    <div class="loader"></div>
+    <span>분석중...</span>
+  </div>
 
   <main class="max-w-[1900px] mx-auto w-full p-4 lg:p-5 grid xl:grid-cols-[minmax(560px,0.95fr)_minmax(0,1.15fr)] gap-4 xl:min-h-[calc(100vh-82px)]">
     <aside class="min-w-0 flex flex-col gap-4">
