@@ -10,6 +10,10 @@ const ruleTitles = {
 };
 
 let dataHeaders = [], journalData = [], originalJournalData = [], lastRuleMap = {};
+let tableColumnOrder = [];
+let tableColumnWidths = {};
+let tableSort = { column: null, direction: null };
+let currentTableView = null;
 
 const $file = document.getElementById('file-upload');
 const $fileName = document.getElementById('file-name');
@@ -278,85 +282,289 @@ function renderTaxSummary(summary = [], validation = null) {
     </div>`;
 }
 
-function adjustColumnWidths(tbl) {
-  const rows = Array.from(tbl.rows);
-  if (!rows.length) return;
-  const colCount = rows[0].cells.length;
-  const max = Array(colCount).fill(0);
-  rows.forEach(r => {
-    Array.from(r.cells).forEach((c, i) => {
-      const w = c.scrollWidth;
-      if (w > max[i]) max[i] = w;
+const preferredTableHeaders = [
+  '전표일자', '전표번호', '계정코드', '계정과목',
+  '차변금액', '대변금액', '거래처코드', 'Tx추천코드', 'Tx분류',
+  'Tx근거', 'Tx검증', '검토상태', '승인일자'
+];
+const hiddenTableHeaders = new Set(['Tx신뢰도']);
+const tableCollator = new Intl.Collator('ko', { numeric: true, sensitivity: 'base' });
+
+function getDefaultDisplayHeaders(headers) {
+  const taxCodeHeader = lastTaxValidation?.source_col
+    || ['부가세코드', 'Tx코드', '세무코드', '부가세유형', 'tax_code'].find(header => headers.includes(header));
+  const requested = [
+    ...preferredTableHeaders.slice(0, 7),
+    taxCodeHeader,
+    ...preferredTableHeaders.slice(7)
+  ].filter(Boolean);
+  const preferred = requested.filter((header, index) => (
+    headers.includes(header) && requested.indexOf(header) === index
+  ));
+  const preferredSet = new Set(preferred);
+  const extras = headers.filter(header => (
+    !preferredSet.has(header) && !hiddenTableHeaders.has(header)
+  ));
+  return [...preferred, ...extras];
+}
+
+function getDisplayHeaders(headers) {
+  const available = getDefaultDisplayHeaders(headers);
+  if (!tableColumnOrder.length) return available;
+  const availableSet = new Set(available);
+  const ordered = tableColumnOrder.filter(header => availableSet.has(header));
+  const orderedSet = new Set(ordered);
+  return [...ordered, ...available.filter(header => !orderedSet.has(header))];
+}
+
+function getHeaderLabel(header) {
+  const taxCodeHeader = lastTaxValidation?.source_col
+    || ['부가세코드', 'Tx코드', '세무코드', '부가세유형', 'tax_code'].find(candidate => dataHeaders.includes(candidate));
+  if (header === taxCodeHeader) return 'Tx코드';
+  return header;
+}
+
+function defaultColumnWidth(header) {
+  const label = getHeaderLabel(header);
+  const widths = {
+    '전표일자': 112, '전표번호': 92, '계정코드': 92, '계정과목': 150,
+    '차변금액': 118, '대변금액': 118, '거래처코드': 108, 'Tx코드': 92,
+    'Tx추천코드': 120, 'Tx분류': 138, 'Tx근거': 280, 'Tx검증': 100,
+    '검토상태': 112, '승인일자': 112
+  };
+  return widths[label] || 140;
+}
+
+function resetTableControls() {
+  tableColumnOrder = [];
+  tableColumnWidths = {};
+  tableSort = { column: null, direction: null };
+  currentTableView = null;
+}
+
+function compareTableValues(a, b) {
+  const left = String(a ?? '').trim();
+  const right = String(b ?? '').trim();
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+
+  const numericPattern = /^-?[\d,]+(?:\.\d+)?$/;
+  if (numericPattern.test(left) && numericPattern.test(right)) {
+    return Number(left.replaceAll(',', '')) - Number(right.replaceAll(',', ''));
+  }
+  return tableCollator.compare(left, right);
+}
+
+function getSortedRows(rows) {
+  if (!tableSort.column || !tableSort.direction) return [...rows];
+  const direction = tableSort.direction === 'asc' ? 1 : -1;
+  return rows.map((row, index) => ({ row, index })).sort((a, b) => {
+    const comparison = compareTableValues(a.row[tableSort.column], b.row[tableSort.column]);
+    return comparison === 0 ? a.index - b.index : comparison * direction;
+  }).map(item => item.row);
+}
+
+function applyColumnWidths(tbl, headers) {
+  const widths = headers.map(header => tableColumnWidths[header] || defaultColumnWidth(header));
+  tbl.querySelectorAll('col').forEach((col, index) => {
+    col.style.width = `${widths[index]}px`;
+  });
+  Array.from(tbl.rows).forEach(row => {
+    Array.from(row.cells).forEach((cell, index) => {
+      cell.style.width = `${widths[index]}px`;
+      cell.style.minWidth = `${widths[index]}px`;
+      cell.style.maxWidth = `${widths[index]}px`;
     });
   });
-  rows.forEach(r => {
-    Array.from(r.cells).forEach((c, i) => {
-      c.style.minWidth = max[i] + 'px';
-      c.style.whiteSpace = 'nowrap';
+  tbl.style.width = `${widths.reduce((sum, width) => sum + width, 0)}px`;
+}
+
+function enableColumnResizing(tbl, headers) {
+  tbl.querySelectorAll('thead th').forEach((th, index) => {
+    const handle = th.querySelector('.column-resizer');
+    if (!handle) return;
+    handle.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const column = headers[index];
+      const startX = event.clientX;
+      const startWidth = tableColumnWidths[column] || th.getBoundingClientRect().width;
+      document.body.classList.add('column-resizing');
+
+      const onMove = moveEvent => {
+        tableColumnWidths[column] = Math.max(60, Math.round(startWidth + moveEvent.clientX - startX));
+        applyColumnWidths(tbl, headers);
+      };
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
+        document.body.classList.remove('column-resizing');
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
     });
   });
 }
 
-const preferredTableHeaders = [
-  '전표일자', '전표번호', '계정코드', '계정과목', '부가세코드',
-  '차변금액', '대변금액', '거래처코드', 'Tx추천코드', 'Tx분류',
-  'Tx신뢰도', 'Tx근거', 'Tx검증', '검토상태', '승인일자'
-];
+function enableColumnDragging(tbl, headers) {
+  const headerCells = Array.from(tbl.querySelectorAll('thead th'));
+  headerCells.forEach((th, sourceIndex) => {
+    const handle = th.querySelector('.column-drag-handle');
+    if (!handle) return;
+    handle.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      let targetIndex = sourceIndex;
+      let placeAfter = false;
+      document.body.classList.add('column-dragging');
+      th.classList.add('column-being-dragged');
 
-function getDisplayHeaders(headers) {
-  const preferred = preferredTableHeaders.filter(header => headers.includes(header));
-  const preferredSet = new Set(preferred);
-  return [...preferred, ...headers.filter(header => !preferredSet.has(header))];
+      const clearDropIndicators = () => {
+        headerCells.forEach(cell => cell.classList.remove('column-drop-before', 'column-drop-after'));
+      };
+      const onMove = moveEvent => {
+        const target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)?.closest('th');
+        const index = headerCells.indexOf(target);
+        if (index < 0) return;
+        if (index === sourceIndex) {
+          targetIndex = sourceIndex;
+          clearDropIndicators();
+          return;
+        }
+        targetIndex = index;
+        const rect = target.getBoundingClientRect();
+        placeAfter = moveEvent.clientX > rect.left + rect.width / 2;
+        clearDropIndicators();
+        target.classList.add(placeAfter ? 'column-drop-after' : 'column-drop-before');
+      };
+      const onUp = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('pointercancel', onUp);
+        document.body.classList.remove('column-dragging');
+        th.classList.remove('column-being-dragged');
+        clearDropIndicators();
+        if (targetIndex === sourceIndex) return;
+
+        const nextOrder = [...headers];
+        const [moved] = nextOrder.splice(sourceIndex, 1);
+        let insertionIndex = targetIndex;
+        if (sourceIndex < targetIndex) insertionIndex -= 1;
+        if (placeAfter) insertionIndex += 1;
+        nextOrder.splice(insertionIndex, 0, moved);
+        tableColumnOrder = nextOrder;
+        renderCurrentTable();
+      };
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onUp);
+    });
+  });
 }
 
 function renderTable(rows, hi = new Set(), ruleMap = {}) {
+  currentTableView = {
+    rows: [...rows],
+    highlightedRowIndices: new Set(
+      [...hi].map(index => rows[index]?.__idx).filter(Number.isInteger)
+    ),
+    ruleMap
+  };
+  renderCurrentTable();
+}
+
+function renderCurrentTable() {
   $tableWrap.classList.remove('hidden');
   // Ensure the table container aligns to the start when displaying data
   $tableWrap.classList.remove('items-center', 'justify-center', 'flex');
   $tableWrap.classList.add('block');
+  const rows = currentTableView?.rows || [];
   if (!rows.length) {
     // Revert to centered layout when showing the empty message
     $tableWrap.classList.remove('block');
     $tableWrap.classList.add('flex', 'items-center', 'justify-center');
     $tableWrap.innerHTML = '<p class="text-gray-500">표시할 데이터가 없습니다.</p>';
     return;
-  }  const tbl = document.createElement('table'); tbl.className = 'text-sm text-left border-collapse';
+  }
+  const tbl = document.createElement('table');
+  tbl.className = 'data-table text-sm text-left border-collapse';
   const headers = getDisplayHeaders(dataHeaders);
-  const head = `<thead class="bg-gray-100"><tr>${headers.map(h => `<th class="p-2 border-b font-semibold whitespace-nowrap">${h}</th>`).join('')}</tr></thead>`;
-  const body = `<tbody>${rows.map((row, idx) => {
+  const sortedRows = getSortedRows(rows);
+  const colgroup = `<colgroup>${headers.map(header => `<col data-column="${encodeURIComponent(header)}">`).join('')}</colgroup>`;
+  const head = `<thead class="bg-gray-100"><tr>${headers.map(header => {
+    const label = getHeaderLabel(header);
+    const sortIndicator = tableSort.column === header
+      ? (tableSort.direction === 'asc' ? '▲' : '▼')
+      : '<span class="text-slate-300">↕</span>';
+    const ariaSort = tableSort.column === header
+      ? (tableSort.direction === 'asc' ? 'ascending' : 'descending')
+      : 'none';
+    return `<th class="relative border-b font-semibold whitespace-nowrap bg-gray-100" data-column="${encodeURIComponent(header)}" aria-sort="${ariaSort}">
+      <div class="flex items-center min-w-0 pr-1">
+        <span class="column-drag-handle px-2 py-2 text-slate-400 hover:text-slate-700" title="드래그하여 열 이동"><i class="fas fa-grip-vertical"></i></span>
+        <button type="button" class="column-sort-button min-w-0 flex-1 flex items-center justify-between gap-2 py-2 pr-2 text-left" title="${escapeHtml(label)} 정렬">
+          <span class="overflow-hidden text-ellipsis">${escapeHtml(label)}</span><span class="sort-indicator text-[10px]">${sortIndicator}</span>
+        </button>
+        <span class="column-resizer" title="드래그하여 열 너비 조절"></span>
+      </div>
+    </th>`;
+  }).join('')}</tr></thead>`;
+  const body = `<tbody>${sortedRows.map(row => {
     const originalIndex = row.__idx;
-    const isHighlighted = hi.has(idx);
+    const isHighlighted = currentTableView.highlightedRowIndices.has(originalIndex);
     const cls = isHighlighted ? 'highlight' : '';
     return `<tr class="border-b hover:bg-gray-50 ${cls}">${headers.map(c => {
       if (c === '검토상태') {
         const value = row[c] || '미검토';
-        if (!row['Tx추천코드']) return '<td class="p-2 whitespace-nowrap"></td>';
-        return `<td class="p-2 whitespace-nowrap"><select class="review-status border rounded px-1 py-0.5 text-xs bg-white" data-row-index="${originalIndex}">
+        if (!row['Tx추천코드']) return '<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis"></td>';
+        return `<td class="p-2 whitespace-nowrap overflow-hidden"><select class="review-status border rounded px-1 py-0.5 text-xs bg-white max-w-full" data-row-index="${originalIndex}">
           ${['미검토', '확인완료', '수정필요', '보류'].map(opt => `<option value="${opt}" ${value === opt ? 'selected' : ''}>${opt}</option>`).join('')}
         </select></td>`;
       }
       if (c === 'Tx검증') {
         const v = String(row[c] ?? '');
-        if (v.startsWith('불일치')) return `<td class="p-2 whitespace-nowrap text-red-600 font-bold">${v}</td>`;
-        if (v === '일치') return `<td class="p-2 whitespace-nowrap text-green-600">${v}</td>`;
-        if (v.startsWith('추천없음')) return `<td class="p-2 whitespace-nowrap text-amber-600">${v}</td>`;
-        return `<td class="p-2 whitespace-nowrap">${v}</td>`;
+        if (v.startsWith('불일치')) return `<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis text-red-600 font-bold" title="${escapeHtml(v)}">${escapeHtml(v)}</td>`;
+        if (v === '일치') return `<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis text-green-600">${escapeHtml(v)}</td>`;
+        if (v.startsWith('추천없음')) return `<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis text-amber-600" title="${escapeHtml(v)}">${escapeHtml(v)}</td>`;
+        return `<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis">${escapeHtml(v)}</td>`;
       }
       if (lastTaxValidation && c === lastTaxValidation.source_col) {
         const v = String(row[c] ?? '');
         if (String(row['Tx검증'] ?? '').startsWith('불일치'))
-          return `<td class="p-2 whitespace-nowrap text-red-600 line-through" title="원본 코드 (수정 제시됨)">${v}</td>`;
-        return `<td class="p-2 whitespace-nowrap">${v}</td>`;
+          return `<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis text-red-600 line-through" title="원본 코드 (수정 제시됨)">${escapeHtml(v)}</td>`;
+        return `<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis">${escapeHtml(v)}</td>`;
       }
       if (c === 'Tx추천코드' && String(row['Tx검증'] ?? '').startsWith('불일치')) {
         const v = String(row[c] ?? '');
-        return `<td class="p-2 whitespace-nowrap text-green-700 font-bold" title="시스템이 제시한 수정 코드">${v} <span class="text-[10px] bg-green-100 text-green-800 px-1 rounded">수정제시</span></td>`;
+        return `<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis text-green-700 font-bold" title="시스템이 제시한 수정 코드">${escapeHtml(v)} <span class="text-[10px] bg-green-100 text-green-800 px-1 rounded">수정제시</span></td>`;
       }
-      return `<td class="p-2 whitespace-nowrap">${row[c] ?? ''}</td>`;
+      const value = String(row[c] ?? '');
+      return `<td class="p-2 whitespace-nowrap overflow-hidden text-ellipsis" title="${escapeHtml(value)}">${escapeHtml(value)}</td>`;
     }).join('')}</tr>`;
   }).join('')}</tbody>`;
-  tbl.innerHTML = head + body;
-  $tableWrap.innerHTML = ''; $tableWrap.appendChild(tbl); adjustColumnWidths(tbl);
+  tbl.innerHTML = colgroup + head + body;
+  $tableWrap.innerHTML = '';
+  $tableWrap.appendChild(tbl);
+  headers.forEach(header => {
+    if (!tableColumnWidths[header]) tableColumnWidths[header] = defaultColumnWidth(header);
+  });
+  applyColumnWidths(tbl, headers);
+
+  tbl.querySelectorAll('.column-sort-button').forEach(button => {
+    button.addEventListener('click', () => {
+      const header = decodeURIComponent(button.closest('th').dataset.column);
+      tableSort = {
+        column: header,
+        direction: tableSort.column === header && tableSort.direction === 'asc' ? 'desc' : 'asc'
+      };
+      renderCurrentTable();
+    });
+  });
+  enableColumnDragging(tbl, headers);
+  enableColumnResizing(tbl, headers);
 }
 
 async function runRuleBasedAnalysis() {
@@ -413,6 +621,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dataHeaders = data.headers;
             journalData = originalJournalData.map((r, i) => ({ ...r, __idx: i }));
             renderTaxSummary(data.tax_summary || [], data.tax_validation);
+            resetTableControls();
             renderTable(journalData);
             logMsg('파일 파싱 및 미리보기 완료', 'success');
         } catch (err) {
@@ -420,6 +629,7 @@ document.addEventListener('DOMContentLoaded', () => {
             originalJournalData = [];
             dataHeaders = [];
             journalData = [];
+            resetTableControls();
             $tableContainer.innerHTML = `<p class="text-red-500">${err.message}</p>`;
         } finally {
             showLoading(false);
